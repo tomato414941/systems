@@ -1,0 +1,7 @@
+node_modules/
+dist/
+data/
+logs/
+*.tsbuildinfo
+AGENTS.override.md
+CLAUDE.local.md
