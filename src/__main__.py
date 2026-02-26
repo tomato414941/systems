@@ -13,6 +13,7 @@ def main() -> None:
     parser.add_argument("-e", "--energy", type=int)
     parser.add_argument("-t", "--turns", type=int)
     parser.add_argument("-i", "--invoker", choices=["claude", "codex"])
+    parser.add_argument("-c", "--concurrency", type=int)
     parser.add_argument("-r", "--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -21,6 +22,7 @@ def main() -> None:
         initial_agent_count=args.agents or DEFAULT_CONFIG.initial_agent_count,
         initial_energy=args.energy or DEFAULT_CONFIG.initial_energy,
         max_turns=args.turns or DEFAULT_CONFIG.max_turns,
+        concurrency=args.concurrency or DEFAULT_CONFIG.concurrency,
         invoker=args.invoker or DEFAULT_CONFIG.invoker,
         dry_run=args.dry_run,
     )

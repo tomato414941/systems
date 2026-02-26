@@ -50,7 +50,8 @@ class SimulationConfig:
     initial_agent_count: int = 8
     initial_energy: int = 20
     max_turns: int = 100
-    turn_timeout: int = 600
+    turn_timeout: int = 900
+    concurrency: int = 2
     invoker: Literal["claude", "codex"] = "claude"
     dry_run: bool = False
     data_dir: str = "data"

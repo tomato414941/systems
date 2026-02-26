@@ -1,10 +1,22 @@
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .types import SimulationConfig, TurnResult, WorldEvent, WorldState
+from .types import AgentState, SimulationConfig, TurnResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
 from .physics import consume_energy, process_transfer, check_deaths
-from .invoker import invoke_agent
+from .invoker import invoke_agent, InvokeResult
 from .logger import log_turn_result, log_event, print_turn_summary
+
+
+def _invoke_worker(
+    agent: AgentState,
+    world: WorldState,
+    shared_dir: str,
+    timeout: int,
+    dry_run: bool,
+) -> tuple[AgentState, InvokeResult]:
+    result = invoke_agent(agent, world, shared_dir, timeout, dry_run)
+    return agent, result
 
 
 def run_turn(world: WorldState, config: SimulationConfig) -> list[TurnResult]:
@@ -14,13 +26,24 @@ def run_turn(world: WorldState, config: SimulationConfig) -> list[TurnResult]:
     random.shuffle(shuffled)
     results: list[TurnResult] = []
 
+    # Invoke agents in parallel, process results sequentially
+    invoke_results: dict[str, tuple[AgentState, InvokeResult, int]] = {}
+
+    with ThreadPoolExecutor(max_workers=config.concurrency) as pool:
+        futures = {
+            pool.submit(
+                _invoke_worker, agent, world, config.shared_dir,
+                config.turn_timeout, config.dry_run,
+            ): agent
+            for agent in shuffled
+        }
+        for future in as_completed(futures):
+            agent, result = future.result()
+            invoke_results[agent.id] = (agent, result, agent.energy)
+
+    # Process in original shuffled order
     for agent in shuffled:
-        energy_before = agent.energy
-
-        result = invoke_agent(
-            agent, world, config.shared_dir, config.turn_timeout, config.dry_run,
-        )
-
+        agent, result, energy_before = invoke_results[agent.id]
         all_events: list[WorldEvent] = []
 
         if result.transfer:
@@ -62,6 +85,7 @@ def run_simulation(world: WorldState, config: SimulationConfig) -> None:
     print(f"Agents: {len(world.agents)} (claude: {claude_count}, codex: {codex_count})")
     print(f"Energy: {config.initial_energy}, MaxTurns: {config.max_turns}")
     print(f"Shared dir: {config.shared_dir}")
+    print(f"Concurrency: {config.concurrency}")
     print(f"DryRun: {config.dry_run}")
     print()
 
