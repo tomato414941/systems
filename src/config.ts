@@ -15,7 +15,7 @@ export const DEFAULT_CONFIG: SimulationConfig = {
   initialAgentCount: 8,
   initialEnergy: 20,
   maxTurns: 100,
-  turnTimeout: 60_000,
+  turnTimeout: 600_000,
   invoker: "claude",
   dryRun: false,
   dataDir: "data",
