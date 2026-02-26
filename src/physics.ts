@@ -1,11 +1,9 @@
 import type {
   WorldState,
   AgentState,
-  AgentAction,
+  TransferRequest,
   WorldEvent,
-  SimulationConfig,
 } from "./types.js";
-import { addBoardMessage } from "./world.js";
 
 export function consumeEnergy(agent: AgentState, turn: number): WorldEvent[] {
   agent.energy -= 1;
@@ -26,53 +24,17 @@ export function consumeEnergy(agent: AgentState, turn: number): WorldEvent[] {
   return events;
 }
 
-export function applyAction(
-  agent: AgentState,
-  action: AgentAction,
-  world: WorldState,
-  config: SimulationConfig,
-): WorldEvent[] {
-  const events: WorldEvent[] = [];
-
-  // speak
-  if (action.speak && typeof action.speak === "string") {
-    addBoardMessage(world, agent.name, action.speak);
-    events.push({
-      turn: world.turn,
-      type: "speak",
-      agentId: agent.id,
-      details: { message: action.speak },
-    });
-  }
-
-  // transfer
-  if (action.transfer) {
-    const transferEvents = processTransfer(agent, action.transfer, world);
-    events.push(...transferEvents);
-  }
-
-  // memory
-  if (action.memory && typeof action.memory === "string") {
-    const trimmed = action.memory.slice(0, config.memoryMaxBytes);
-    agent.memory = trimmed;
-  }
-
-  return events;
-}
-
-function processTransfer(
+export function processTransfer(
   sender: AgentState,
-  transfer: { to: string; amount: number },
+  transfer: TransferRequest,
   world: WorldState,
 ): WorldEvent[] {
   const events: WorldEvent[] = [];
   const { to, amount } = transfer;
 
-  if (typeof amount !== "number" || amount <= 0) return events;
+  if (amount <= 0) return events;
 
-  const recipient = world.agents.find(
-    (a) => a.name === to && a.alive,
-  );
+  const recipient = world.agents.find((a) => a.name === to && a.alive);
   if (!recipient) return events;
   if (recipient.id === sender.id) return events;
 
@@ -86,11 +48,7 @@ function processTransfer(
     turn: world.turn,
     type: "transfer",
     agentId: sender.id,
-    details: {
-      from: sender.name,
-      to: recipient.name,
-      amount: actual,
-    },
+    details: { from: sender.name, to: recipient.name, amount: actual },
   });
 
   return events;

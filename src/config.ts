@@ -13,15 +13,14 @@ const AGENT_NAMES = [
 
 export const DEFAULT_CONFIG: SimulationConfig = {
   initialAgentCount: 8,
-  initialEnergy: 100,
-  maxTurns: 300,
-  turnTimeout: 30_000,
-  boardDisplayLimit: 20,
-  memoryMaxBytes: 2048,
+  initialEnergy: 20,
+  maxTurns: 100,
+  turnTimeout: 60_000,
   invoker: "claude",
   dryRun: false,
   dataDir: "data",
   logsDir: "logs",
+  sharedDir: "data/shared",
 };
 
 export function getAgentName(index: number): string {

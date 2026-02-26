@@ -5,7 +5,7 @@ import type {
   WorldEvent,
 } from "./types.js";
 import { getAliveAgents, saveWorld } from "./world.js";
-import { consumeEnergy, applyAction, checkDeaths } from "./physics.js";
+import { consumeEnergy, processTransfer, checkDeaths } from "./physics.js";
 import { invokeAgent } from "./invoker.js";
 import { logTurnResult, logEvent, printTurnSummary } from "./logger.js";
 
@@ -21,61 +21,50 @@ export function runTurn(
   for (const agent of shuffled) {
     const energyBefore = agent.energy;
 
-    const { action, rawOutput, parseSuccess } = invokeAgent(
+    const { transfer, rawOutput } = invokeAgent(
       agent,
       world,
-      config.boardDisplayLimit,
+      config.sharedDir,
       config.turnTimeout,
       config.dryRun,
     );
 
-    // apply action effects
-    const actionEvents = applyAction(agent, action, world, config);
+    const allEvents: WorldEvent[] = [];
+
+    // process transfer if requested
+    if (transfer) {
+      const transferEvents = processTransfer(agent, transfer, world);
+      allEvents.push(...transferEvents);
+    }
 
     // consume 1 energy for this turn
     const consumeEvents = consumeEnergy(agent, world.turn);
-
-    const allEvents = [...actionEvents, ...consumeEvents];
-    if (!parseSuccess) {
-      const parseEvent: WorldEvent = {
-        turn: world.turn,
-        type: "parse_error",
-        agentId: agent.id,
-        details: { rawOutput: rawOutput.slice(0, 200) },
-      };
-      allEvents.push(parseEvent);
-    }
+    allEvents.push(...consumeEvents);
 
     const result: TurnResult = {
       agentId: agent.id,
       agentName: agent.name,
-      action,
+      transfer,
       rawOutput,
-      parseSuccess,
       energyBefore,
       energyAfter: agent.energy,
       events: allEvents,
     };
 
     results.push(result);
-
-    // log
     logTurnResult(result);
     for (const event of allEvents) {
       logEvent(event);
     }
   }
 
-  // post-turn: check any remaining deaths
+  // post-turn death check
   const deathEvents = checkDeaths(world);
   for (const event of deathEvents) {
     logEvent(event);
   }
 
-  // save state
   saveWorld(world, config.dataDir);
-
-  // print summary
   printTurnSummary(world, results);
 
   return results;
@@ -85,11 +74,13 @@ export function runSimulation(
   world: WorldState,
   config: SimulationConfig,
 ): void {
-  console.log("=== Systems: ALife Simulation ===");
+  console.log("=== Systems: ALife Simulation v2 ===");
   console.log(
-    `Agents: ${world.agents.length}, Energy: ${config.initialEnergy}, MaxTurns: ${config.maxTurns}`,
+    `Agents: ${world.agents.length} (claude: ${world.agents.filter((a) => a.invoker === "claude").length}, codex: ${world.agents.filter((a) => a.invoker === "codex").length})`,
   );
-  console.log(`Invoker: ${config.invoker}, DryRun: ${config.dryRun}`);
+  console.log(`Energy: ${config.initialEnergy}, MaxTurns: ${config.maxTurns}`);
+  console.log(`Shared dir: ${config.sharedDir}`);
+  console.log(`DryRun: ${config.dryRun}`);
   console.log("");
 
   saveWorld(world, config.dataDir);
@@ -110,7 +101,9 @@ export function runSimulation(
 
   const alive = getAliveAgents(world);
   console.log(`\n=== Simulation ended at turn ${world.turn} ===`);
-  console.log(`Survivors: ${alive.map((a) => `${a.name}(E=${a.energy})`).join(", ") || "none"}`);
+  console.log(
+    `Survivors: ${alive.map((a) => `${a.name}(E=${a.energy},${a.invoker})`).join(", ") || "none"}`,
+  );
 }
 
 function shuffle<T>(arr: T[]): T[] {

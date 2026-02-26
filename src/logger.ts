@@ -35,19 +35,18 @@ export function printTurnSummary(
 
   for (const r of results) {
     const parts: string[] = [];
-    if (r.action.speak) parts.push(`spoke: "${truncate(r.action.speak, 40)}"`);
-    if (r.action.transfer)
-      parts.push(`transfer ${r.action.transfer.amount} → ${r.action.transfer.to}`);
-    if (!r.parseSuccess) parts.push("(parse error)");
+    if (r.transfer) {
+      parts.push(`TRANSFER ${r.transfer.amount} → ${r.transfer.to}`);
+    }
+    const outputPreview = r.rawOutput
+      .replace(/\n/g, " ")
+      .slice(0, 60);
+    parts.push(`"${outputPreview}..."`);
 
-    const status = r.energyAfter <= 0 ? " ☠" : "";
+    const status = r.energyAfter <= 0 ? " DEAD" : "";
+    const invokerTag = world.agents.find((a) => a.id === r.agentId)?.invoker ?? "?";
     console.log(
-      `  ${r.agentName}: E=${r.energyBefore}→${r.energyAfter}${status} ${parts.join(", ")}`,
+      `  ${r.agentName}[${invokerTag}]: E=${r.energyBefore}→${r.energyAfter}${status} ${parts.join(", ")}`,
     );
   }
-}
-
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return s.slice(0, max - 3) + "...";
 }

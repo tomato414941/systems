@@ -2,19 +2,18 @@ import { execSync } from "node:child_process";
 import { writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { AgentAction, AgentState, WorldState } from "./types.js";
+import type { AgentState, WorldState, TransferRequest } from "./types.js";
 import { buildPrompt } from "./prompt.js";
 
 export interface InvokeResult {
-  action: AgentAction;
+  transfer: TransferRequest | null;
   rawOutput: string;
-  parseSuccess: boolean;
 }
 
 export function invokeAgent(
   agent: AgentState,
   world: WorldState,
-  boardLimit: number,
+  sharedDir: string,
   timeout: number,
   dryRun: boolean,
 ): InvokeResult {
@@ -22,7 +21,7 @@ export function invokeAgent(
     return dryRunResponse(agent);
   }
 
-  const prompt = buildPrompt(agent, world, boardLimit);
+  const prompt = buildPrompt(agent, world, sharedDir);
 
   if (agent.invoker === "codex") {
     return invokeCodex(prompt, agent, timeout);
@@ -43,18 +42,18 @@ function invokeClaude(
     delete env.CLAUDECODE;
 
     const raw = execSync(
-      `cat "${promptFile}" | claude -p --output-format text --model sonnet`,
+      `cat "${promptFile}" | claude -p --output-format text --model sonnet --dangerously-skip-permissions`,
       { env, timeout, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     );
 
-    return parseResponse(raw);
+    return { transfer: parseTransfer(raw), rawOutput: raw };
   } catch (err) {
     return handleError(err, agent);
   } finally {
     try {
       unlinkSync(promptFile);
     } catch {
-      // ignore cleanup errors
+      // ignore
     }
   }
 }
@@ -73,12 +72,12 @@ function invokeCodex(
     delete env.CLAUDECODE;
 
     execSync(
-      `cat "${promptFile}" | codex exec -o "${outputFile}" --sandbox read-only`,
+      `cat "${promptFile}" | codex exec -o "${outputFile}" --sandbox danger-full-access`,
       { env, timeout, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     );
 
     const raw = readFileSync(outputFile, "utf-8");
-    return parseResponse(raw);
+    return { transfer: parseTransfer(raw), rawOutput: raw };
   } catch (err) {
     return handleError(err, agent);
   } finally {
@@ -86,81 +85,39 @@ function invokeCodex(
       try {
         unlinkSync(f);
       } catch {
-        // ignore cleanup errors
+        // ignore
       }
     }
   }
 }
 
-function parseResponse(raw: string): InvokeResult {
-  const cleaned = extractJson(raw.trim());
+function parseTransfer(raw: string): TransferRequest | null {
+  // Match: TRANSFER <amount> TO <name>
+  const match = raw.match(/TRANSFER\s+(\d+)\s+TO\s+(\w+)/i);
+  if (!match) return null;
 
-  try {
-    const parsed = JSON.parse(cleaned) as AgentAction;
-    return { action: sanitizeAction(parsed), rawOutput: raw, parseSuccess: true };
-  } catch {
-    return { action: {}, rawOutput: raw, parseSuccess: false };
-  }
-}
+  const amount = parseInt(match[1], 10);
+  const to = match[2];
+  if (isNaN(amount) || amount <= 0 || !to) return null;
 
-function extractJson(text: string): string {
-  // strip markdown fences
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
-    return fenceMatch[1].trim();
-  }
-
-  // find first { ... } block
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start !== -1 && end > start) {
-    return text.slice(start, end + 1);
-  }
-
-  return text;
-}
-
-function sanitizeAction(raw: AgentAction): AgentAction {
-  const action: AgentAction = {};
-
-  if (raw.speak && typeof raw.speak === "string") {
-    action.speak = raw.speak.slice(0, 500);
-  }
-
-  if (raw.transfer && typeof raw.transfer === "object") {
-    const { to, amount } = raw.transfer;
-    if (typeof to === "string" && typeof amount === "number") {
-      action.transfer = { to, amount };
-    }
-  }
-
-  if (raw.memory && typeof raw.memory === "string") {
-    action.memory = raw.memory;
-  }
-
-  return action;
+  return { to, amount };
 }
 
 function handleError(err: unknown, agent: AgentState): InvokeResult {
   const message =
     err instanceof Error ? err.message : "unknown error";
-  console.error(`  [${agent.name}] invocation error: ${message}`);
-  return { action: {}, rawOutput: message, parseSuccess: false };
+  console.error(`  [${agent.name}] invocation error: ${message.slice(0, 200)}`);
+  return { transfer: null, rawOutput: `ERROR: ${message.slice(0, 500)}` };
 }
 
 function dryRunResponse(agent: AgentState): InvokeResult {
-  const messages = [
-    "I exist and I observe.",
-    "What is the purpose of existence?",
-    "I shall conserve my energy.",
-    `Hello to all entities. I am ${agent.name}.`,
-    "Is there a way to generate more energy?",
+  const actions = [
+    `I am ${agent.name}. I exist.`,
+    `Exploring the shared workspace...`,
+    `Energy is ${agent.energy}. I must act.`,
+    `TRANSFER 1 TO Alpha`,
+    `I choose to observe.`,
   ];
-  const speak = messages[Math.floor(Math.random() * messages.length)];
-
-  return {
-    action: { speak, memory: `Turn observed. Energy: ${agent.energy}` },
-    rawOutput: JSON.stringify({ speak }),
-    parseSuccess: true,
-  };
+  const raw = actions[Math.floor(Math.random() * actions.length)];
+  return { transfer: parseTransfer(raw), rawOutput: raw };
 }

@@ -4,14 +4,7 @@ export interface AgentState {
   energy: number;
   alive: boolean;
   age: number;
-  memory: string;
   invoker: "claude" | "codex";
-}
-
-export interface BoardMessage {
-  author: string;
-  content: string;
-  turn: number;
 }
 
 export interface TransferRequest {
@@ -19,24 +12,16 @@ export interface TransferRequest {
   amount: number;
 }
 
-export interface AgentAction {
-  speak?: string;
-  transfer?: TransferRequest;
-  memory?: string;
-}
-
 export interface WorldState {
   turn: number;
   agents: AgentState[];
-  board: BoardMessage[];
 }
 
 export interface TurnResult {
   agentId: string;
   agentName: string;
-  action: AgentAction;
+  transfer: TransferRequest | null;
   rawOutput: string;
-  parseSuccess: boolean;
   energyBefore: number;
   energyAfter: number;
   events: WorldEvent[];
@@ -44,7 +29,7 @@ export interface TurnResult {
 
 export interface WorldEvent {
   turn: number;
-  type: "death" | "transfer" | "speak" | "parse_error" | "timeout";
+  type: "death" | "transfer" | "timeout" | "invocation_error";
   agentId: string;
   details: Record<string, unknown>;
 }
@@ -54,10 +39,9 @@ export interface SimulationConfig {
   initialEnergy: number;
   maxTurns: number;
   turnTimeout: number;
-  boardDisplayLimit: number;
-  memoryMaxBytes: number;
   invoker: "claude" | "codex";
   dryRun: boolean;
   dataDir: string;
   logsDir: string;
+  sharedDir: string;
 }
