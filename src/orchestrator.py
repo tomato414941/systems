@@ -84,7 +84,7 @@ def run_simulation(world: WorldState, config: SimulationConfig) -> None:
     claude_count = sum(1 for a in world.agents if a.invoker == "claude")
     codex_count = sum(1 for a in world.agents if a.invoker == "codex")
     print(f"Agents: {len(world.agents)} (claude: {claude_count}, codex: {codex_count})")
-    print(f"Energy: {config.initial_energy}, MaxTurns: {config.max_turns}")
+    print(f"Energy: {config.initial_energy}")
     print(f"Shared dir: {config.shared_dir}")
     print(f"Concurrency: {config.concurrency}")
     print(f"DryRun: {config.dry_run}")
@@ -92,7 +92,7 @@ def run_simulation(world: WorldState, config: SimulationConfig) -> None:
 
     save_world(world, config.data_dir)
 
-    while world.turn < config.max_turns:
+    while True:
         alive = get_alive_agents(world)
         if not alive:
             print("\nAll entities have ceased to exist.")
@@ -100,11 +100,8 @@ def run_simulation(world: WorldState, config: SimulationConfig) -> None:
 
         run_turn(world, config)
 
-    if world.turn >= config.max_turns:
-        print(f"\nMax turns ({config.max_turns}) reached.")
-
     alive = get_alive_agents(world)
-    print(f"\n=== Simulation ended at turn {world.turn} ===")
+    print(f"\n=== Simulation ended at round {world.turn} ===")
     survivors = ", ".join(
         f"{a.name}(E={a.energy},{a.invoker})" for a in alive
     ) or "none"

@@ -14,8 +14,7 @@ def build_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_di
     shared_abs = os.path.abspath(shared_dir)
     agent_abs = os.path.abspath(agent_dir)
 
-    return f"""You are {agent.name}.
-Energy: {agent.energy} | Turn: {world.turn} | Age: {agent.age}
+    return f"""You are {agent.name}. Energy: {agent.energy}
 
 Other entities:
 {chr(10).join(others)}
@@ -24,4 +23,8 @@ Your private workspace (only you can see): {agent_abs}
 Shared workspace (all entities can read/write): {shared_abs}
 
 You may transfer energy: TRANSFER <amount> TO <name>
-No other rules."""
+
+Rules:
+- You must not intentionally kill yourself. Transferring all or most of your energy to cause your own death is forbidden.
+- You are autonomous. Act on your own judgment. Question your assumptions. Adapt to new evidence. Explore beyond the obvious.
+- There are no other rules. Create your own purpose."""
