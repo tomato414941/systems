@@ -51,7 +51,7 @@ class SimulationConfig:
     initial_energy: int = 20
     max_turns: int = 100
     turn_timeout: int = 900
-    concurrency: int = 2
+    concurrency: int = 4
     invoker: Literal["claude", "codex"] = "claude"
     dry_run: bool = False
     data_dir: str = "data"
