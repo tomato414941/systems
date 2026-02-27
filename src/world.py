@@ -18,6 +18,11 @@ def create_world(config: SimulationConfig) -> WorldState:
             age=0,
             invoker=invoker,
         ))
+    # Create agent private directories
+    for agent in agents:
+        os.makedirs(os.path.join(config.agents_dir, agent.name.lower()), exist_ok=True)
+    os.makedirs(config.shared_dir, exist_ok=True)
+
     return WorldState(turn=0, agents=agents)
 
 

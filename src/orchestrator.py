@@ -12,10 +12,11 @@ def _invoke_worker(
     agent: AgentState,
     world: WorldState,
     shared_dir: str,
+    agents_dir: str,
     timeout: int,
     dry_run: bool,
 ) -> tuple[AgentState, InvokeResult]:
-    result = invoke_agent(agent, world, shared_dir, timeout, dry_run)
+    result = invoke_agent(agent, world, shared_dir, agents_dir, timeout, dry_run)
     return agent, result
 
 
@@ -33,7 +34,7 @@ def run_turn(world: WorldState, config: SimulationConfig) -> list[TurnResult]:
         futures = {
             pool.submit(
                 _invoke_worker, agent, world, config.shared_dir,
-                config.turn_timeout, config.dry_run,
+                config.agents_dir, config.turn_timeout, config.dry_run,
             ): agent
             for agent in shuffled
         }

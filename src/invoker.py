@@ -19,13 +19,16 @@ def invoke_agent(
     agent: AgentState,
     world: WorldState,
     shared_dir: str,
+    agents_dir: str,
     timeout: int,
     dry_run: bool,
 ) -> InvokeResult:
     if dry_run:
         return _dry_run_response(agent)
 
-    prompt = build_prompt(agent, world, shared_dir)
+    agent_dir = os.path.join(agents_dir, agent.name.lower())
+    os.makedirs(agent_dir, exist_ok=True)
+    prompt = build_prompt(agent, world, shared_dir, agent_dir)
 
     if agent.invoker == "codex":
         return _invoke_codex(prompt, agent, timeout)

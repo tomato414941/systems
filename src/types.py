@@ -57,3 +57,4 @@ class SimulationConfig:
     data_dir: str = "data"
     logs_dir: str = "logs"
     shared_dir: str = "data/shared"
+    agents_dir: str = "data/agents"
