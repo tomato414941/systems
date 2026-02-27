@@ -13,6 +13,7 @@ def main() -> None:
     parser.add_argument("-e", "--energy", type=int)
     parser.add_argument("-i", "--invoker", choices=["claude", "codex"])
     parser.add_argument("-c", "--concurrency", type=int)
+    parser.add_argument("-n", "--rounds", type=int, help="number of rounds to run")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -29,11 +30,11 @@ def main() -> None:
     world = load_world(config.data_dir)
     if world:
         alive = [a for a in world.agents if a.alive]
-        print(f"Resuming: {len(alive)} alive, round {world.turn}")
+        print(f"Resuming: {len(alive)} alive, round {world.round}")
     else:
         world = create_world(config)
 
-    run_simulation(world, config)
+    run_simulation(world, config, max_rounds=args.rounds)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ def create_world(config: SimulationConfig) -> WorldState:
         os.makedirs(os.path.join(config.agents_dir, agent.name.lower()), exist_ok=True)
     os.makedirs(config.shared_dir, exist_ok=True)
 
-    return WorldState(turn=0, agents=agents)
+    return WorldState(round=0, agents=agents)
 
 
 def load_world(data_dir: str) -> WorldState | None:
@@ -33,7 +33,7 @@ def load_world(data_dir: str) -> WorldState | None:
     with open(path) as f:
         data = json.load(f)
     agents = [AgentState(**a) for a in data["agents"]]
-    return WorldState(turn=data["turn"], agents=agents)
+    return WorldState(round=data["round"], agents=agents)
 
 
 def save_world(world: WorldState, data_dir: str) -> None:

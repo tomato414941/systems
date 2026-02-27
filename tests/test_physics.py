@@ -16,7 +16,7 @@ def make_agent(**overrides) -> AgentState:
 
 
 def make_world(agents: list[AgentState]) -> WorldState:
-    return WorldState(turn=1, agents=agents)
+    return WorldState(round=1, agents=agents)
 
 
 class TestConsumeEnergy:

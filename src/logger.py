@@ -2,7 +2,7 @@ import json
 import os
 from dataclasses import asdict
 
-from .types import TurnResult, WorldEvent, WorldState
+from .types import RoundResult, WorldEvent, WorldState
 
 
 _logs_dir: str = "logs"
@@ -14,8 +14,8 @@ def init_logger(logs_dir: str) -> None:
     os.makedirs(logs_dir, exist_ok=True)
 
 
-def log_turn_result(result: TurnResult) -> None:
-    path = os.path.join(_logs_dir, "turns.jsonl")
+def log_round_result(result: RoundResult) -> None:
+    path = os.path.join(_logs_dir, "rounds.jsonl")
     with open(path, "a") as f:
         f.write(json.dumps(asdict(result)) + "\n")
 
@@ -26,11 +26,11 @@ def log_event(event: WorldEvent) -> None:
         f.write(json.dumps(asdict(event)) + "\n")
 
 
-def print_turn_summary(world: WorldState, results: list[TurnResult]) -> None:
+def print_round_summary(world: WorldState, results: list[RoundResult]) -> None:
     alive = [a for a in world.agents if a.alive]
     transfers = [r for r in results if r.transfer]
 
-    print(f"\n--- Turn {world.turn} ---")
+    print(f"\n--- Round {world.round} ---")
     print(f"  Population: {len(alive)}/{len(world.agents)}")
     if transfers:
         print(f"  Transfers: {len(transfers)}")

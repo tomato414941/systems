@@ -1,7 +1,7 @@
 from .types import AgentState, TransferRequest, WorldEvent, WorldState
 
 
-def consume_energy(agent: AgentState, turn: int) -> list[WorldEvent]:
+def consume_energy(agent: AgentState, round_num: int) -> list[WorldEvent]:
     agent.energy -= 1
     agent.age += 1
     events: list[WorldEvent] = []
@@ -9,7 +9,7 @@ def consume_energy(agent: AgentState, turn: int) -> list[WorldEvent]:
     if agent.energy <= 0:
         agent.alive = False
         events.append(WorldEvent(
-            turn=turn,
+            round=round_num,
             type="death",
             agent_id=agent.id,
             details={"reason": "energy_depleted"},
@@ -38,7 +38,7 @@ def process_transfer(
     receiver.energy += actual
 
     return [WorldEvent(
-        turn=world.turn,
+        round=world.round,
         type="transfer",
         agent_id=sender.id,
         details={"to": receiver.id, "amount": actual},
@@ -51,7 +51,7 @@ def check_deaths(world: WorldState) -> list[WorldEvent]:
         if agent.alive and agent.energy <= 0:
             agent.alive = False
             events.append(WorldEvent(
-                turn=world.turn,
+                round=world.round,
                 type="death",
                 agent_id=agent.id,
                 details={"reason": "energy_depleted"},

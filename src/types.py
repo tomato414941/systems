@@ -22,20 +22,20 @@ class TransferRequest:
 
 @dataclass
 class WorldState:
-    turn: int
+    round: int
     agents: list[AgentState]
 
 
 @dataclass
 class WorldEvent:
-    turn: int
+    round: int
     type: Literal["death", "transfer", "timeout", "invocation_error"]
     agent_id: str
     details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
-class TurnResult:
+class RoundResult:
     agent_id: str
     agent_name: str
     transfer: TransferRequest | None
@@ -49,7 +49,7 @@ class TurnResult:
 class SimulationConfig:
     initial_agent_count: int = 8
     initial_energy: int = 20
-    turn_timeout: int = 900
+    round_timeout: int = 900
     concurrency: int = 4
     invoker: Literal["claude", "codex"] = "claude"
     dry_run: bool = False
