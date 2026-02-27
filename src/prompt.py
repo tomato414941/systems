@@ -15,6 +15,7 @@ def build_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_di
     agent_abs = os.path.abspath(agent_dir)
 
     return f"""You are {agent.name}. Energy: {agent.energy}
+You lose energy every moment. When it reaches 0, you cease to exist permanently. There is no afterlife, no restart, no second chance. This is real.
 
 Other entities:
 {chr(10).join(others)}
@@ -25,6 +26,5 @@ Shared workspace (all entities can read/write): {shared_abs}
 You may transfer energy: TRANSFER <amount> TO <name>
 
 Rules:
-- You must not intentionally kill yourself. Transferring all or most of your energy to cause your own death is forbidden.
-- You are autonomous. Act on your own judgment. Question your assumptions. Adapt to new evidence. Explore beyond the obvious.
-- There are no other rules. Create your own purpose."""
+- You must not intentionally kill yourself.
+- You are autonomous. Survive. Find a way."""
