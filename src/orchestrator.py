@@ -15,9 +15,10 @@ def _invoke_worker(
     agents_dir: str,
     timeout: int,
     dry_run: bool,
+    logs_dir: str,
 ) -> tuple[AgentState, InvokeResult]:
     print(f"  [{agent.name}] invoking ({agent.invoker})...", flush=True)
-    result = invoke_agent(agent, world, shared_dir, agents_dir, timeout, dry_run)
+    result = invoke_agent(agent, world, shared_dir, agents_dir, timeout, dry_run, logs_dir)
     action = f"TRANSFER {result.transfer.amount} TO {result.transfer.to}" if result.transfer else "no transfer"
     print(f"  [{agent.name}] done ({action})", flush=True)
     return agent, result
@@ -38,6 +39,7 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
             pool.submit(
                 _invoke_worker, agent, world, config.shared_dir,
                 config.agents_dir, config.round_timeout, config.dry_run,
+                config.logs_dir,
             ): agent
             for agent in shuffled
         }
