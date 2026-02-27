@@ -16,7 +16,10 @@ def _invoke_worker(
     timeout: int,
     dry_run: bool,
 ) -> tuple[AgentState, InvokeResult]:
+    print(f"  [{agent.name}] invoking ({agent.invoker})...", flush=True)
     result = invoke_agent(agent, world, shared_dir, agents_dir, timeout, dry_run)
+    action = f"TRANSFER {result.transfer.amount} TO {result.transfer.to}" if result.transfer else "no transfer"
+    print(f"  [{agent.name}] done ({action})", flush=True)
     return agent, result
 
 
@@ -25,6 +28,7 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
     alive = get_alive_agents(world)
     shuffled = alive[:]
     random.shuffle(shuffled)
+    print(f"\n=== Round {world.round} ({len(alive)} alive) ===", flush=True)
     results: list[RoundResult] = []
 
     invoke_results: dict[str, tuple[AgentState, InvokeResult, int]] = {}
