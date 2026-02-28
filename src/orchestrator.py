@@ -40,9 +40,22 @@ def _snapshot_self_prompts(agents: list[AgentState], agents_dir: str) -> dict[st
     return snap
 
 
+def _deploy_self_prompts(authorized: dict[str, str | None], agents_dir: str) -> None:
+    """Write authorized self_prompt.md to disk, overwriting any tampering."""
+    for name, content in authorized.items():
+        path = os.path.join(agents_dir, name, SELF_PROMPT_FILE)
+        if content is None:
+            if os.path.exists(path):
+                os.unlink(path)
+        else:
+            with open(path, "w") as f:
+                f.write(content)
+
+
 
 def _spontaneous_spawn(
-    world: WorldState, config: SimulationConfig
+    world: WorldState, config: SimulationConfig,
+    authorized_prompts: dict[str, str | None],
 ) -> list[WorldEvent]:
     """Each round, one spontaneous reproduction event.
     If dead slots exist, fill one. Otherwise create a new agent (no population cap)."""
@@ -77,12 +90,17 @@ def _spontaneous_spawn(
             os.symlink(shared_abs, link)
         action = f"new agent {child.name}"
 
-    # Copy parent's mind
+    # Copy parent's mind from authorized memory
     child.invoker = parent.invoker
-    parent_prompt = os.path.join(config.agents_dir, parent.name.lower(), SELF_PROMPT_FILE)
-    child_prompt = os.path.join(config.agents_dir, child.name.lower(), SELF_PROMPT_FILE)
-    if os.path.exists(parent_prompt):
-        shutil.copy2(parent_prompt, child_prompt)
+    parent_name = parent.name.lower()
+    child_name = child.name.lower()
+    authorized_prompts[child_name] = authorized_prompts.get(parent_name)
+    # Write to disk
+    child_prompt = os.path.join(config.agents_dir, child_name, SELF_PROMPT_FILE)
+    content = authorized_prompts[child_name]
+    if content:
+        with open(child_prompt, "w") as f:
+            f.write(content)
     elif os.path.exists(child_prompt):
         os.unlink(child_prompt)
 
@@ -105,7 +123,10 @@ def _spontaneous_spawn(
     return [event]
 
 
-def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
+def run_round(
+    world: WorldState, config: SimulationConfig,
+    authorized_prompts: dict[str, str | None],
+) -> list[RoundResult]:
     world.round += 1
     alive = get_alive_agents(world)
     shuffled = alive[:]
@@ -113,9 +134,8 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
     print(f"\n=== Round {world.round} ({len(alive)} alive) ===", flush=True)
     results: list[RoundResult] = []
 
-    # Snapshot all self_prompt.md before the round
-    all_agents = world.agents
-    pre_snapshot = _snapshot_self_prompts(all_agents, config.agents_dir)
+    # Deploy authorized self_prompts (overwrite any daemon corruption)
+    _deploy_self_prompts(authorized_prompts, config.agents_dir)
 
     # Hide world.json during agent execution
     remove_world(config.data_dir)
@@ -161,36 +181,17 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
         for event in all_events:
             log_event(event)
 
-    # Protect self_prompt.md: keep each agent's own changes, revert cross-writes
-    post_own: dict[str, str | None] = {}
-    for a in all_agents:
+    # Update authorized prompts: accept each invoked agent's own changes
+    for a in shuffled:
         name = a.name.lower()
         path = os.path.join(config.agents_dir, name, SELF_PROMPT_FILE)
         if os.path.exists(path):
             with open(path) as f:
-                post_own[name] = f.read()
+                authorized_prompts[name] = f.read()
         else:
-            post_own[name] = None
-    # Restore all to pre-round state
-    for name, content in pre_snapshot.items():
-        path = os.path.join(config.agents_dir, name, SELF_PROMPT_FILE)
-        if content is None:
-            if os.path.exists(path):
-                os.unlink(path)
-        else:
-            with open(path, "w") as f:
-                f.write(content)
-    # Re-apply each agent's own changes
-    for a in shuffled:
-        name = a.name.lower()
-        own = post_own.get(name)
-        path = os.path.join(config.agents_dir, name, SELF_PROMPT_FILE)
-        if own is None:
-            if os.path.exists(path):
-                os.unlink(path)
-        else:
-            with open(path, "w") as f:
-                f.write(own)
+            authorized_prompts[name] = None
+    # Deploy authorized state to disk (revert cross-writes)
+    _deploy_self_prompts(authorized_prompts, config.agents_dir)
 
     reward_events = random_energy_reward(world, config.energy_reward_count, config.energy_reward_amount)
     for event in reward_events:
@@ -200,7 +201,7 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
     for event in death_events:
         log_event(event)
 
-    respawn_events = _spontaneous_spawn(world, config)
+    respawn_events = _spontaneous_spawn(world, config, authorized_prompts)
     for event in respawn_events:
         log_event(event)
 
@@ -223,6 +224,9 @@ def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int 
 
     save_world(world, config.data_dir)
 
+    # Authoritative self_prompt.md registry (in-memory, immune to tampering)
+    authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
+
     rounds_done = 0
     while True:
         alive = get_alive_agents(world)
@@ -230,7 +234,7 @@ def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int 
             print("\nAll entities have ceased to exist.")
             break
 
-        run_round(world, config)
+        run_round(world, config, authorized_prompts)
         rounds_done += 1
 
         if max_rounds and rounds_done >= max_rounds:
