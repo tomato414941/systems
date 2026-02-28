@@ -1,5 +1,6 @@
 import os
 import random
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
@@ -37,6 +38,42 @@ def _snapshot_self_prompts(agents: list[AgentState], agents_dir: str) -> dict[st
             snap[a.name.lower()] = None
     return snap
 
+
+
+def _respawn_dead_agents(
+    world: WorldState, config: SimulationConfig
+) -> list[WorldEvent]:
+    dead = [a for a in world.agents if not a.alive]
+    alive = [a for a in world.agents if a.alive]
+    if not dead or not alive:
+        return []
+
+    events: list[WorldEvent] = []
+    for agent in dead:
+        parent = random.choice(alive)
+        # Inherit invoker
+        agent.invoker = parent.invoker
+        # Copy parent's self_prompt.md
+        parent_prompt = os.path.join(config.agents_dir, parent.name.lower(), SELF_PROMPT_FILE)
+        child_prompt = os.path.join(config.agents_dir, agent.name.lower(), SELF_PROMPT_FILE)
+        if os.path.exists(parent_prompt):
+            shutil.copy2(parent_prompt, child_prompt)
+        elif os.path.exists(child_prompt):
+            os.unlink(child_prompt)
+        # Reset state
+        agent.energy = config.initial_energy
+        agent.alive = True
+        agent.age = 0
+
+        events.append(WorldEvent(
+            round=world.round,
+            type="respawn",
+            agent_id=agent.id,
+            details={"parent_id": parent.id, "parent_name": parent.name, "invoker": agent.invoker},
+        ))
+        print(f"  [{agent.name}] respawned from {parent.name} (invoker={agent.invoker})")
+
+    return events
 
 
 def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
@@ -125,6 +162,10 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
 
     death_events = check_deaths(world)
     for event in death_events:
+        log_event(event)
+
+    respawn_events = _respawn_dead_agents(world, config)
+    for event in respawn_events:
         log_event(event)
 
     save_world(world, config.data_dir)
