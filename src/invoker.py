@@ -33,12 +33,13 @@ def invoke_agent(
     os.makedirs(agent_dir, exist_ok=True)
     prompt = build_full_prompt(agent, world, shared_dir, agent_dir)
 
+    agent_abs = os.path.abspath(agent_dir)
     if agent.invoker == "codex":
-        return _invoke_codex(prompt, agent, timeout, logs_dir, world.round)
-    return _invoke_claude(prompt, agent, timeout, logs_dir, world.round)
+        return _invoke_codex(prompt, agent, timeout, logs_dir, world.round, agent_abs)
+    return _invoke_claude(prompt, agent, timeout, logs_dir, world.round, agent_abs)
 
 
-def _invoke_claude(prompt: str, agent: AgentState, timeout: int, logs_dir: str, round_num: int) -> InvokeResult:
+def _invoke_claude(prompt: str, agent: AgentState, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
     fd, prompt_file = tempfile.mkstemp(prefix=f"systems-prompt-{agent.id}-", suffix=".txt")
     stream_dir = os.path.join(logs_dir, "streams")
     os.makedirs(stream_dir, exist_ok=True)
@@ -54,6 +55,7 @@ def _invoke_claude(prompt: str, agent: AgentState, timeout: int, logs_dir: str, 
             text=True,
             timeout=timeout,
             env=env,
+            cwd=cwd,
         )
 
         # Save raw JSONL stream
@@ -73,7 +75,7 @@ def _invoke_claude(prompt: str, agent: AgentState, timeout: int, logs_dir: str, 
             pass
 
 
-def _invoke_codex(prompt: str, agent: AgentState, timeout: int, logs_dir: str, round_num: int) -> InvokeResult:
+def _invoke_codex(prompt: str, agent: AgentState, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
     fd, prompt_file = tempfile.mkstemp(prefix=f"systems-prompt-{agent.id}-", suffix=".txt")
     fd2, output_file = tempfile.mkstemp(prefix=f"systems-output-{agent.id}-", suffix=".txt")
     os.close(fd2)
@@ -91,6 +93,7 @@ def _invoke_codex(prompt: str, agent: AgentState, timeout: int, logs_dir: str, r
             text=True,
             timeout=timeout,
             env=env,
+            cwd=cwd,
         )
 
         # Save raw JSONL stream
