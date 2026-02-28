@@ -1,3 +1,4 @@
+import os
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -6,6 +7,7 @@ from .world import get_alive_agents, save_world
 from .physics import consume_energy, process_transfer, check_deaths
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
+from .prompt import SELF_PROMPT_FILE
 
 
 def _invoke_worker(
@@ -24,6 +26,19 @@ def _invoke_worker(
     return agent, result
 
 
+def _snapshot_self_prompts(agents: list[AgentState], agents_dir: str) -> dict[str, str | None]:
+    snap: dict[str, str | None] = {}
+    for a in agents:
+        path = os.path.join(agents_dir, a.name.lower(), SELF_PROMPT_FILE)
+        if os.path.exists(path):
+            with open(path) as f:
+                snap[a.name.lower()] = f.read()
+        else:
+            snap[a.name.lower()] = None
+    return snap
+
+
+
 def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
     world.round += 1
     alive = get_alive_agents(world)
@@ -31,6 +46,10 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
     random.shuffle(shuffled)
     print(f"\n=== Round {world.round} ({len(alive)} alive) ===", flush=True)
     results: list[RoundResult] = []
+
+    # Snapshot all self_prompt.md before the round
+    all_agents = world.agents
+    pre_snapshot = _snapshot_self_prompts(all_agents, config.agents_dir)
 
     invoke_results: dict[str, tuple[AgentState, InvokeResult, int]] = {}
 
@@ -72,6 +91,37 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
         log_round_result(round_result)
         for event in all_events:
             log_event(event)
+
+    # Protect self_prompt.md: keep each agent's own changes, revert cross-writes
+    post_own: dict[str, str | None] = {}
+    for a in all_agents:
+        name = a.name.lower()
+        path = os.path.join(config.agents_dir, name, SELF_PROMPT_FILE)
+        if os.path.exists(path):
+            with open(path) as f:
+                post_own[name] = f.read()
+        else:
+            post_own[name] = None
+    # Restore all to pre-round state
+    for name, content in pre_snapshot.items():
+        path = os.path.join(config.agents_dir, name, SELF_PROMPT_FILE)
+        if content is None:
+            if os.path.exists(path):
+                os.unlink(path)
+        else:
+            with open(path, "w") as f:
+                f.write(content)
+    # Re-apply each agent's own changes
+    for a in shuffled:
+        name = a.name.lower()
+        own = post_own.get(name)
+        path = os.path.join(config.agents_dir, name, SELF_PROMPT_FILE)
+        if own is None:
+            if os.path.exists(path):
+                os.unlink(path)
+        else:
+            with open(path, "w") as f:
+                f.write(own)
 
     death_events = check_deaths(world)
     for event in death_events:
