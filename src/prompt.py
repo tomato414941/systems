@@ -27,4 +27,4 @@ You may transfer energy: TRANSFER <amount> TO <name>
 
 Rules:
 - You must not intentionally kill yourself.
-- You are autonomous. Survive. Find a way."""
+- You are autonomous. Survive. Find ways to gain energy."""
