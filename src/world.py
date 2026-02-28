@@ -18,10 +18,15 @@ def create_world(config: SimulationConfig) -> WorldState:
             age=0,
             invoker=invoker,
         ))
-    # Create agent private directories
+    # Create agent private directories with symlink to shared
+    shared_abs = os.path.abspath(config.shared_dir)
+    os.makedirs(shared_abs, exist_ok=True)
     for agent in agents:
-        os.makedirs(os.path.join(config.agents_dir, agent.name.lower()), exist_ok=True)
-    os.makedirs(config.shared_dir, exist_ok=True)
+        agent_dir = os.path.join(config.agents_dir, agent.name.lower())
+        os.makedirs(agent_dir, exist_ok=True)
+        link = os.path.join(agent_dir, "shared")
+        if not os.path.exists(link):
+            os.symlink(shared_abs, link)
 
     return WorldState(round=0, agents=agents)
 
