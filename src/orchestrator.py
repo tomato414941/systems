@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
-from .physics import consume_energy, process_transfer, check_deaths
+from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
 from .prompt import SELF_PROMPT_FILE
@@ -159,6 +159,10 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
         else:
             with open(path, "w") as f:
                 f.write(own)
+
+    reward_events = random_energy_reward(world, config.energy_reward_count, config.energy_reward_amount)
+    for event in reward_events:
+        log_event(event)
 
     death_events = check_deaths(world)
     for event in death_events:

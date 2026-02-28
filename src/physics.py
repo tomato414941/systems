@@ -1,3 +1,5 @@
+import random
+
 from .types import AgentState, TransferRequest, WorldEvent, WorldState
 
 
@@ -43,6 +45,23 @@ def process_transfer(
         agent_id=sender.id,
         details={"to": receiver.id, "amount": actual},
     )]
+
+
+def random_energy_reward(world: WorldState, count: int, amount: int) -> list[WorldEvent]:
+    alive = [a for a in world.agents if a.alive]
+    if not alive:
+        return []
+    winners = random.sample(alive, min(count, len(alive)))
+    events: list[WorldEvent] = []
+    for agent in winners:
+        agent.energy += amount
+        events.append(WorldEvent(
+            round=world.round,
+            type="energy_reward",
+            agent_id=agent.id,
+            details={"amount": amount},
+        ))
+    return events
 
 
 def check_deaths(world: WorldState) -> list[WorldEvent]:

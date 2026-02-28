@@ -29,7 +29,7 @@ class WorldState:
 @dataclass
 class WorldEvent:
     round: int
-    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn"]
+    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "energy_reward"]
     agent_id: str
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -57,3 +57,5 @@ class SimulationConfig:
     logs_dir: str = "logs"
     shared_dir: str = "data/shared"
     agents_dir: str = "data/agents"
+    energy_reward_count: int = 3
+    energy_reward_amount: int = 3
