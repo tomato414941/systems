@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 from .types import AgentState, TransferRequest, WorldState
-from .prompt import build_prompt
+from .prompt import build_full_prompt
 
 
 class InvokeResult:
@@ -31,7 +31,7 @@ def invoke_agent(
 
     agent_dir = os.path.join(agents_dir, agent.name.lower())
     os.makedirs(agent_dir, exist_ok=True)
-    prompt = build_prompt(agent, world, shared_dir, agent_dir)
+    prompt = build_full_prompt(agent, world, shared_dir, agent_dir)
 
     if agent.invoker == "codex":
         return _invoke_codex(prompt, agent, timeout, logs_dir, world.round)
