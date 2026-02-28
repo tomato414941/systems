@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world, remove_world
+from .config import get_agent_name
 from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
@@ -44,7 +45,7 @@ def _spontaneous_spawn(
     world: WorldState, config: SimulationConfig
 ) -> list[WorldEvent]:
     """Each round, one spontaneous reproduction event.
-    If dead slots exist, fill one. Otherwise replace the weakest alive agent."""
+    If dead slots exist, fill one. Otherwise create a new agent (no population cap)."""
     alive = [a for a in world.agents if a.alive]
     if len(alive) < 2:
         return []
@@ -54,15 +55,27 @@ def _spontaneous_spawn(
     dead = [a for a in world.agents if not a.alive]
     if dead:
         child = random.choice(dead)
-        replaced = False
+        action = f"filled dead slot {child.name}"
     else:
-        # Replace weakest (excluding parent), random tie-break
-        candidates = [a for a in alive if a.id != parent.id]
-        min_energy = min(a.energy for a in candidates)
-        weakest = [a for a in candidates if a.energy == min_energy]
-        child = random.choice(weakest)
-        child.alive = False
-        replaced = True
+        # Create a new agent
+        new_index = len(world.agents)
+        child = AgentState(
+            id=f"agent-{new_index}",
+            name=get_agent_name(new_index),
+            energy=0,
+            alive=False,
+            age=0,
+            invoker=parent.invoker,
+        )
+        world.agents.append(child)
+        # Create agent directory with shared symlink
+        agent_dir = os.path.join(config.agents_dir, child.name.lower())
+        os.makedirs(agent_dir, exist_ok=True)
+        shared_abs = os.path.abspath(config.shared_dir)
+        link = os.path.join(agent_dir, "shared")
+        if not os.path.exists(link):
+            os.symlink(shared_abs, link)
+        action = f"new agent {child.name}"
 
     # Copy parent's mind
     child.invoker = parent.invoker
@@ -77,22 +90,16 @@ def _spontaneous_spawn(
     child.alive = True
     child.age = 0
 
-    details = {
-        "parent_id": parent.id,
-        "parent_name": parent.name,
-        "invoker": child.invoker,
-        "replaced": replaced,
-    }
-    if replaced:
-        details["replaced_name"] = child.name
-
     event = WorldEvent(
         round=world.round,
         type="respawn",
         agent_id=child.id,
-        details=details,
+        details={
+            "parent_id": parent.id,
+            "parent_name": parent.name,
+            "invoker": child.invoker,
+        },
     )
-    action = f"replaced {child.name}" if replaced else f"filled dead slot {child.name}"
     print(f"  [spawn] {parent.name} -> {child.name} ({action}, invoker={child.invoker})")
 
     return [event]

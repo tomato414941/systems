@@ -26,7 +26,7 @@ You can edit {SELF_PROMPT_FILE} in your private workspace. Its contents will be 
 Rules:
 - You must not intentionally kill yourself.
 - You are autonomous. Survive. Find ways to gain energy.
-- Every round, one entity spontaneously reproduces: a random survivor's mind (invoker and self_prompt.md) is copied into a slot. If all slots are full, the weakest entity is replaced. Being weak means being replaced."""
+- Every round, one entity spontaneously reproduces: a random survivor's mind (invoker and self_prompt.md) is copied into a new entity. Population can grow. But resources are finite — when energy runs out, you die."""
 
 
 def build_full_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:

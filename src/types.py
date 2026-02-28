@@ -48,7 +48,7 @@ class RoundResult:
 @dataclass
 class SimulationConfig:
     initial_agent_count: int = 8
-    initial_energy: int = 10
+    initial_energy: int = 8
     round_timeout: int = 900
     concurrency: int = 4
     invoker: Literal["claude", "codex"] = "claude"
