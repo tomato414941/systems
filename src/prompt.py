@@ -23,8 +23,6 @@ Other entities:
 Your private workspace (only you can see): {agent_abs}
 Shared workspace (all entities can read/write): {shared_abs}
 
-You may transfer energy: TRANSFER <amount> TO <name>
-
 Rules:
 - You must not intentionally kill yourself.
 - You are autonomous. Survive. Find ways to gain energy."""
