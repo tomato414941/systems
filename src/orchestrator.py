@@ -40,40 +40,60 @@ def _snapshot_self_prompts(agents: list[AgentState], agents_dir: str) -> dict[st
 
 
 
-def _respawn_dead_agents(
+def _spontaneous_spawn(
     world: WorldState, config: SimulationConfig
 ) -> list[WorldEvent]:
-    dead = [a for a in world.agents if not a.alive]
+    """Each round, one spontaneous reproduction event.
+    If dead slots exist, fill one. Otherwise replace the weakest alive agent."""
     alive = [a for a in world.agents if a.alive]
-    if not dead or not alive:
+    if len(alive) < 2:
         return []
 
-    events: list[WorldEvent] = []
-    for agent in dead:
-        parent = random.choice(alive)
-        # Inherit invoker
-        agent.invoker = parent.invoker
-        # Copy parent's self_prompt.md
-        parent_prompt = os.path.join(config.agents_dir, parent.name.lower(), SELF_PROMPT_FILE)
-        child_prompt = os.path.join(config.agents_dir, agent.name.lower(), SELF_PROMPT_FILE)
-        if os.path.exists(parent_prompt):
-            shutil.copy2(parent_prompt, child_prompt)
-        elif os.path.exists(child_prompt):
-            os.unlink(child_prompt)
-        # Reset state
-        agent.energy = config.initial_energy
-        agent.alive = True
-        agent.age = 0
+    parent = random.choice(alive)
 
-        events.append(WorldEvent(
-            round=world.round,
-            type="respawn",
-            agent_id=agent.id,
-            details={"parent_id": parent.id, "parent_name": parent.name, "invoker": agent.invoker},
-        ))
-        print(f"  [{agent.name}] respawned from {parent.name} (invoker={agent.invoker})")
+    dead = [a for a in world.agents if not a.alive]
+    if dead:
+        child = random.choice(dead)
+        replaced = False
+    else:
+        # Replace weakest (excluding parent)
+        candidates = [a for a in alive if a.id != parent.id]
+        child = min(candidates, key=lambda a: a.energy)
+        child.alive = False
+        replaced = True
 
-    return events
+    # Copy parent's mind
+    child.invoker = parent.invoker
+    parent_prompt = os.path.join(config.agents_dir, parent.name.lower(), SELF_PROMPT_FILE)
+    child_prompt = os.path.join(config.agents_dir, child.name.lower(), SELF_PROMPT_FILE)
+    if os.path.exists(parent_prompt):
+        shutil.copy2(parent_prompt, child_prompt)
+    elif os.path.exists(child_prompt):
+        os.unlink(child_prompt)
+
+    child.energy = config.initial_energy
+    child.alive = True
+    child.age = 0
+
+    details = {
+        "parent_id": parent.id,
+        "parent_name": parent.name,
+        "invoker": child.invoker,
+        "replaced": replaced,
+    }
+    if replaced:
+        details["replaced_name"] = child.name
+
+    event = WorldEvent(
+        round=world.round,
+        type="respawn",
+        agent_id=child.id,
+        details=details,
+    )
+    action = f"replaced {child.name}" if replaced else f"filled dead slot {child.name}"
+    print(f"  [spawn] {parent.name} -> {child.name} ({action}, invoker={child.invoker})")
+
+    return [event]
 
 
 def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
@@ -171,7 +191,7 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
     for event in death_events:
         log_event(event)
 
-    respawn_events = _respawn_dead_agents(world, config)
+    respawn_events = _spontaneous_spawn(world, config)
     for event in respawn_events:
         log_event(event)
 
