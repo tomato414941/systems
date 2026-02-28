@@ -2,7 +2,7 @@ import os
 
 from .types import AgentState, WorldState
 
-SELF_PROMPT_FILE = "self_prompt.txt"
+SELF_PROMPT_FILE = "self_prompt.md"
 
 
 def build_system_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
