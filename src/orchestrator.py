@@ -4,7 +4,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
-from .world import get_alive_agents, save_world
+from .world import get_alive_agents, save_world, remove_world
 from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
@@ -87,6 +87,9 @@ def run_round(world: WorldState, config: SimulationConfig) -> list[RoundResult]:
     # Snapshot all self_prompt.md before the round
     all_agents = world.agents
     pre_snapshot = _snapshot_self_prompts(all_agents, config.agents_dir)
+
+    # Hide world.json during agent execution
+    remove_world(config.data_dir)
 
     invoke_results: dict[str, tuple[AgentState, InvokeResult, int]] = {}
 

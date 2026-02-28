@@ -49,5 +49,13 @@ def save_world(world: WorldState, data_dir: str) -> None:
 
 
 
+def remove_world(data_dir: str) -> None:
+    path = os.path.join(data_dir, "world.json")
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+
 def get_alive_agents(world: WorldState) -> list[AgentState]:
     return [a for a in world.agents if a.alive]
