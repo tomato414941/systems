@@ -56,9 +56,11 @@ def _spontaneous_spawn(
         child = random.choice(dead)
         replaced = False
     else:
-        # Replace weakest (excluding parent)
+        # Replace weakest (excluding parent), random tie-break
         candidates = [a for a in alive if a.id != parent.id]
-        child = min(candidates, key=lambda a: a.energy)
+        min_energy = min(a.energy for a in candidates)
+        weakest = [a for a in candidates if a.energy == min_energy]
+        child = random.choice(weakest)
         child.alive = False
         replaced = True
 
