@@ -50,7 +50,7 @@ def _invoke_claude(prompt: str, agent: AgentState, timeout: int, logs_dir: str, 
 
         env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
         result = subprocess.run(
-            ["sh", "-c", f'cat "{prompt_file}" | claude -p --output-format stream-json --model sonnet --dangerously-skip-permissions'],
+            ["sh", "-c", f'cat "{prompt_file}" | claude -p --verbose --output-format stream-json --model sonnet --dangerously-skip-permissions'],
             capture_output=True,
             text=True,
             timeout=timeout,
