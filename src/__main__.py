@@ -15,6 +15,8 @@ def main() -> None:
     parser.add_argument("-c", "--concurrency", type=int)
     parser.add_argument("-n", "--rounds", type=int, help="number of rounds to run")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--claude-model", type=str, help="model for claude agents")
+    parser.add_argument("--codex-model", type=str, help="model for codex agents")
     args = parser.parse_args()
 
     config = SimulationConfig(
@@ -23,6 +25,8 @@ def main() -> None:
         concurrency=args.concurrency or DEFAULT_CONFIG.concurrency,
         invoker=args.invoker or DEFAULT_CONFIG.invoker,
         dry_run=args.dry_run,
+        claude_model=args.claude_model or DEFAULT_CONFIG.claude_model,
+        codex_model=args.codex_model or DEFAULT_CONFIG.codex_model,
     )
 
     init_logger(config.logs_dir)

@@ -8,10 +8,11 @@ from typing import Any, Literal
 class AgentState:
     id: str
     name: str
-    energy: int
+    energy: float
     alive: bool
     age: int
     invoker: Literal["claude", "codex"]
+    model: str = ""
 
 
 @dataclass
@@ -48,7 +49,7 @@ class RoundResult:
 @dataclass
 class SimulationConfig:
     initial_agent_count: int = 8
-    initial_energy: int = 8
+    initial_energy: float = 8.0
     round_timeout: int = 900
     concurrency: int = 4
     invoker: Literal["claude", "codex"] = "claude"
@@ -58,4 +59,6 @@ class SimulationConfig:
     shared_dir: str = "data/shared"
     agents_dir: str = "data/agents"
     energy_reward_count: int = 3
-    energy_reward_amount: int = 1
+    energy_reward_amount: float = 1.0
+    claude_model: str = "sonnet"
+    codex_model: str = "gpt-5.3-codex"

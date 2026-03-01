@@ -21,10 +21,11 @@ def _invoke_worker(
     dry_run: bool,
     logs_dir: str,
 ) -> tuple[AgentState, InvokeResult]:
-    print(f"  [{agent.name}] invoking ({agent.invoker})...", flush=True)
+    print(f"  [{agent.name}] invoking ({agent.invoker}/{agent.model})...", flush=True)
     result = invoke_agent(agent, world, shared_dir, agents_dir, timeout, dry_run, logs_dir)
     action = f"TRANSFER {result.transfer.amount} TO {result.transfer.to}" if result.transfer else "no transfer"
-    print(f"  [{agent.name}] done ({action})", flush=True)
+    cost_str = f", ${result.cost_usd:.3f}" if result.cost_usd > 0 else ""
+    print(f"  [{agent.name}] done ({action}{cost_str})", flush=True)
     return agent, result
 
 
@@ -79,6 +80,7 @@ def _spontaneous_spawn(
             alive=False,
             age=0,
             invoker=parent.invoker,
+            model=parent.model,
         )
         world.agents.append(child)
         # Create agent directory with shared symlink
@@ -92,6 +94,7 @@ def _spontaneous_spawn(
 
     # Copy parent's mind from authorized memory
     child.invoker = parent.invoker
+    child.model = parent.model
     parent_name = parent.name.lower()
     child_name = child.name.lower()
     authorized_prompts[child_name] = authorized_prompts.get(parent_name)
@@ -118,7 +121,7 @@ def _spontaneous_spawn(
             "invoker": child.invoker,
         },
     )
-    print(f"  [spawn] {parent.name} -> {child.name} ({action}, invoker={child.invoker})")
+    print(f"  [spawn] {parent.name} -> {child.name} ({action}, {child.invoker}/{child.model})")
 
     return [event]
 
@@ -163,7 +166,7 @@ def run_round(
             transfer_events = process_transfer(agent, result.transfer, world)
             all_events.extend(transfer_events)
 
-        consume_events = consume_energy(agent, world.round)
+        consume_events = consume_energy(agent, world.round, result.cost_usd)
         all_events.extend(consume_events)
 
         round_result = RoundResult(
@@ -212,10 +215,11 @@ def run_round(
 
 
 def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int | None = None) -> None:
-    print("=== Systems: ALife Simulation v2 ===")
-    claude_count = sum(1 for a in world.agents if a.invoker == "claude")
-    codex_count = sum(1 for a in world.agents if a.invoker == "codex")
-    print(f"Agents: {len(world.agents)} (claude: {claude_count}, codex: {codex_count})")
+    print("=== Systems: ALife Simulation v3 ===")
+    from collections import Counter
+    model_counts = Counter(a.model for a in world.agents)
+    model_str = ", ".join(f"{m}: {c}" for m, c in model_counts.most_common())
+    print(f"Agents: {len(world.agents)} ({model_str})")
     print(f"Energy: {config.initial_energy}")
     print(f"Shared dir: {config.shared_dir}")
     print(f"Concurrency: {config.concurrency}")
@@ -243,6 +247,6 @@ def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int 
     alive = get_alive_agents(world)
     print(f"\n=== Simulation ended at round {world.round} ===")
     survivors = ", ".join(
-        f"{a.name}(E={a.energy},{a.invoker})" for a in alive
+        f"{a.name}(E={a.energy:.2f},{a.model})" for a in alive
     ) or "none"
     print(f"Survivors: {survivors}")

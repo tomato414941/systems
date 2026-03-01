@@ -10,6 +10,7 @@ def create_world(config: SimulationConfig) -> WorldState:
     agents: list[AgentState] = []
     for i in range(config.initial_agent_count):
         invoker = "claude" if i < config.initial_agent_count // 2 else "codex"
+        model = config.claude_model if invoker == "claude" else config.codex_model
         agents.append(AgentState(
             id=f"agent-{i}",
             name=get_agent_name(i),
@@ -17,6 +18,7 @@ def create_world(config: SimulationConfig) -> WorldState:
             alive=True,
             age=0,
             invoker=invoker,
+            model=model,
         ))
     # Create agent private directories with symlink to shared
     shared_abs = os.path.abspath(config.shared_dir)
@@ -37,7 +39,11 @@ def load_world(data_dir: str) -> WorldState | None:
         return None
     with open(path) as f:
         data = json.load(f)
-    agents = [AgentState(**a) for a in data["agents"]]
+    agents: list[AgentState] = []
+    for a in data["agents"]:
+        if "model" not in a:
+            a["model"] = "sonnet" if a.get("invoker") == "claude" else "gpt-5.3-codex"
+        agents.append(AgentState(**a))
     return WorldState(round=data["round"], agents=agents)
 
 

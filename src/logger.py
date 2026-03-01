@@ -39,7 +39,7 @@ def print_round_summary(world: WorldState, results: list[RoundResult]) -> None:
         if agent is None:
             continue
         status = "ALIVE" if agent.alive else "DEAD"
-        line = f"  {r.agent_name}: E={r.energy_before}->{r.energy_after} [{status}]"
+        line = f"  {r.agent_name}: E={r.energy_before:.2f}->{r.energy_after:.2f} [{status}]"
         if r.transfer:
             line += f" (gave {r.transfer.amount} to {r.transfer.to})"
         print(line)
