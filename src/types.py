@@ -58,4 +58,4 @@ class SimulationConfig:
     shared_dir: str = "data/shared"
     agents_dir: str = "data/agents"
     energy_reward_count: int = 3
-    energy_reward_amount: int = 3
+    energy_reward_amount: int = 1
