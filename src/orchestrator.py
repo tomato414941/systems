@@ -4,13 +4,14 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
-from .world import get_alive_agents, save_world, remove_world
+from .world import get_alive_agents, save_world, save_world_wip, load_world_wip, remove_world
 from .config import get_agent_name
 from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
 from .prompt import SELF_PROMPT_FILE
 from .audit import audit_round, set_agent_names
+from .queue import QueueState, load_queue, save_queue, delete_queue, create_queue
 
 
 def _invoke_worker(
@@ -221,6 +222,147 @@ def run_round(
             print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
 
     return results
+
+
+def _finalize_round(
+    world: WorldState, config: SimulationConfig,
+    authorized_prompts: dict[str, str | None],
+) -> None:
+    reward_events = random_energy_reward(world, config.energy_reward_count, config.energy_reward_amount)
+    for event in reward_events:
+        log_event(event)
+
+    death_events = check_deaths(world)
+    for event in death_events:
+        log_event(event)
+
+    respawn_events = _spontaneous_spawn(world, config, authorized_prompts)
+    for event in respawn_events:
+        log_event(event)
+
+    save_world(world, config.data_dir)
+
+    # Clean up wip file
+    wip_path = os.path.join(config.data_dir, "world_wip.json")
+    if os.path.exists(wip_path):
+        os.unlink(wip_path)
+
+    set_agent_names(world.agents)
+    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.agents_dir)
+    if audit_findings:
+        print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
+        for f in audit_findings:
+            print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
+
+    delete_queue(config.data_dir)
+
+    alive = get_alive_agents(world)
+    print(f"\n  Round {world.round} finalized. {len(alive)} alive.")
+
+
+def run_step(world: WorldState, config: SimulationConfig) -> None:
+    queue = load_queue(config.data_dir)
+
+    if queue is None:
+        # Start new round
+        world.round += 1
+        queue = create_queue(world)
+        save_queue(queue, config.data_dir)
+
+        authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
+        _deploy_self_prompts(authorized_prompts, config.agents_dir)
+        remove_world(config.data_dir)
+        save_world_wip(world, config.data_dir)
+
+        alive = get_alive_agents(world)
+        print(f"\n=== Round {world.round} started ({len(alive)} alive, {len(queue.order)} in queue) ===")
+
+    # Use WIP world if available (mid-round state)
+    wip = load_world_wip(config.data_dir)
+    if wip:
+        world.round = wip.round
+        world.agents = wip.agents
+
+    if queue.phase == "finalize":
+        authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
+        _finalize_round(world, config, authorized_prompts)
+        return
+
+    # Invoke next agent
+    next_id = queue.next_agent_id
+    if next_id is None:
+        queue.phase = "finalize"
+        save_queue(queue, config.data_dir)
+        authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
+        _finalize_round(world, config, authorized_prompts)
+        return
+
+    agent = next((a for a in world.agents if a.id == next_id), None)
+    if agent is None or not agent.alive:
+        queue.completed.append(next_id)
+        save_queue(queue, config.data_dir)
+        print(f"  [{next_id}] skipped (dead or missing)")
+        return
+
+    remaining = len(queue.pending) - 1
+    print(f"\n=== Round {world.round} step ({agent.name}, {remaining} remaining) ===")
+
+    # Deploy authorized prompts for this agent
+    authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
+    _deploy_self_prompts(authorized_prompts, config.agents_dir)
+
+    # Ensure world.json is hidden
+    remove_world(config.data_dir)
+
+    # Invoke
+    energy_before = agent.energy
+    _, result = _invoke_worker(
+        agent, world, config.shared_dir, config.agents_dir,
+        config.round_timeout, config.dry_run, config.logs_dir,
+    )
+
+    # Process result
+    all_events: list[WorldEvent] = []
+    if result.transfer:
+        transfer_events = process_transfer(agent, result.transfer, world)
+        all_events.extend(transfer_events)
+
+    consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
+    all_events.extend(consume_events)
+
+    round_result = RoundResult(
+        agent_id=agent.id,
+        agent_name=agent.name,
+        transfer=result.transfer,
+        raw_output=result.raw_output,
+        energy_before=energy_before,
+        energy_after=agent.energy,
+        events=all_events,
+    )
+    log_round_result(round_result)
+    for event in all_events:
+        log_event(event)
+
+    # Update this agent's authorized prompt
+    name = agent.name.lower()
+    path = os.path.join(config.agents_dir, name, SELF_PROMPT_FILE)
+    if os.path.exists(path):
+        with open(path) as f:
+            authorized_prompts[name] = f.read()
+    else:
+        authorized_prompts[name] = None
+    _deploy_self_prompts(authorized_prompts, config.agents_dir)
+
+    # Update queue
+    queue.completed.append(next_id)
+    if not queue.pending:
+        queue.phase = "finalize"
+    save_queue(queue, config.data_dir)
+    save_world_wip(world, config.data_dir)
+
+    print(f"  [{agent.name}] E={energy_before:.2f} -> {agent.energy:.2f}")
+    if not queue.pending:
+        print(f"  All agents done. Run --step again to finalize round.")
 
 
 def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int | None = None) -> None:

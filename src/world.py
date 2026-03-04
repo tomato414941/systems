@@ -55,6 +55,27 @@ def save_world(world: WorldState, data_dir: str) -> None:
 
 
 
+def save_world_wip(world: WorldState, data_dir: str) -> None:
+    os.makedirs(data_dir, exist_ok=True)
+    path = os.path.join(data_dir, "world_wip.json")
+    with open(path, "w") as f:
+        json.dump(asdict(world), f, indent=2)
+
+
+def load_world_wip(data_dir: str) -> WorldState | None:
+    path = os.path.join(data_dir, "world_wip.json")
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        data = json.load(f)
+    agents = []
+    for a in data["agents"]:
+        if "model" not in a:
+            a["model"] = "sonnet" if a.get("invoker") == "claude" else "gpt-5.3-codex"
+        agents.append(AgentState(**a))
+    return WorldState(round=data["round"], agents=agents)
+
+
 def remove_world(data_dir: str) -> None:
     path = os.path.join(data_dir, "world.json")
     try:
