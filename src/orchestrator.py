@@ -10,6 +10,7 @@ from .physics import consume_energy, process_transfer, check_deaths, random_ener
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
 from .prompt import SELF_PROMPT_FILE
+from .audit import audit_round, set_agent_names
 
 
 def _invoke_worker(
@@ -166,7 +167,7 @@ def run_round(
             transfer_events = process_transfer(agent, result.transfer, world)
             all_events.extend(transfer_events)
 
-        consume_events = consume_energy(agent, world.round, result.cost_usd)
+        consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
         all_events.extend(consume_events)
 
         round_result = RoundResult(
@@ -210,6 +211,14 @@ def run_round(
 
     save_world(world, config.data_dir)
     print_round_summary(world, results)
+
+    # Fraud detection audit
+    set_agent_names(world.agents)
+    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.agents_dir)
+    if audit_findings:
+        print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
+        for f in audit_findings:
+            print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
 
     return results
 
