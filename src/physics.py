@@ -3,8 +3,10 @@ import random
 from .types import AgentState, TransferRequest, WorldEvent, WorldState
 
 
-def consume_energy(agent: AgentState, round_num: int, cost_usd: float = 0.0) -> list[WorldEvent]:
-    agent.energy -= cost_usd
+def consume_energy(agent: AgentState, round_num: int, cost_usd: float = 0.0, base_metabolism: float = 0.0) -> list[WorldEvent]:
+    activity_cost = cost_usd
+    total_cost = base_metabolism + activity_cost
+    agent.energy -= total_cost
     agent.age += 1
     events: list[WorldEvent] = []
 
@@ -14,7 +16,7 @@ def consume_energy(agent: AgentState, round_num: int, cost_usd: float = 0.0) -> 
             round=round_num,
             type="death",
             agent_id=agent.id,
-            details={"reason": "energy_depleted", "cost_usd": cost_usd},
+            details={"reason": "energy_depleted", "base_metabolism": base_metabolism, "activity_cost": activity_cost},
         ))
 
     return events

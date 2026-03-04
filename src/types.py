@@ -60,5 +60,6 @@ class SimulationConfig:
     agents_dir: str = "data/agents"
     energy_reward_count: int = 3
     energy_reward_amount: float = 1.0
+    base_metabolism: float = 1.0
     claude_model: str = "sonnet"
     codex_model: str = "gpt-5.3-codex"
