@@ -260,7 +260,7 @@ def _finalize_round(
     print(f"\n  Round {world.round} finalized. {len(alive)} alive.")
 
 
-def run_step(world: WorldState, config: SimulationConfig) -> None:
+def run_turn(world: WorldState, config: SimulationConfig) -> None:
     queue = load_queue(config.data_dir)
 
     if queue is None:
@@ -305,7 +305,7 @@ def run_step(world: WorldState, config: SimulationConfig) -> None:
         return
 
     remaining = len(queue.pending) - 1
-    print(f"\n=== Round {world.round} step ({agent.name}, {remaining} remaining) ===")
+    print(f"\n=== Round {world.round} turn ({agent.name}, {remaining} remaining) ===")
 
     # Deploy authorized prompts for this agent
     authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
@@ -362,7 +362,7 @@ def run_step(world: WorldState, config: SimulationConfig) -> None:
 
     print(f"  [{agent.name}] E={energy_before:.2f} -> {agent.energy:.2f}")
     if not queue.pending:
-        print(f"  All agents done. Run --step again to finalize round.")
+        print(f"  All agents done. Run --turn again to finalize round.")
 
 
 def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int | None = None) -> None:
