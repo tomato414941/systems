@@ -6,6 +6,7 @@ import tempfile
 
 from .types import AgentState, TransferRequest, WorldState
 from .prompt import build_full_prompt
+from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
 
 
 class InvokeResult:
@@ -16,15 +17,6 @@ class InvokeResult:
         self.raw_output = raw_output
         self.stream_file = stream_file
         self.cost_usd = cost_usd
-
-
-# Codex model pricing ($/MTok)
-_CODEX_PRICING: dict[str, tuple[float, float]] = {
-    # (input_price, output_price) per million tokens
-    "gpt-5.3-codex": (1.75, 14.0),
-    "gpt-5.3-codex-spark": (1.75, 14.0),  # estimated, API pricing not public yet
-}
-_CODEX_DEFAULT_PRICING = (1.75, 14.0)
 
 
 def invoke_agent(
@@ -44,7 +36,7 @@ def invoke_agent(
     prompt = build_full_prompt(agent, world, shared_dir, agent_dir)
 
     agent_abs = os.path.abspath(agent_dir)
-    model = agent.model or ("claude-sonnet-4-5" if agent.invoker == "claude" else "gpt-5.3-codex")
+    model = agent.model or default_model(agent.invoker)
     if agent.invoker == "codex":
         return _invoke_codex(prompt, agent, model, timeout, logs_dir, world.round, agent_abs)
     return _invoke_claude(prompt, agent, model, timeout, logs_dir, world.round, agent_abs)
@@ -163,7 +155,7 @@ def _extract_cost_from_claude_stream(jsonl: str) -> float:
 
 
 def _extract_cost_from_codex_stream(jsonl: str, model: str) -> float:
-    input_price, output_price = _CODEX_PRICING.get(model, _CODEX_DEFAULT_PRICING)
+    input_price, output_price = MODEL_PRICING.get(model, DEFAULT_PRICING)
     total_input = 0
     total_output = 0
     for line in jsonl.splitlines():
