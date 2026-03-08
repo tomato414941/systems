@@ -29,6 +29,7 @@ INVOKERS = {
         "models": {
             "gpt-5.3-codex": {"pricing": (1.75, 14.0)},
             "gpt-5.3-codex-spark": {"pricing": (1.75, 14.0)},
+            "gpt-5.4": {"pricing": (2.50, 15.0)},
         },
     },
 }
