@@ -41,8 +41,8 @@ class RoundResult:
     agent_name: str
     transfer: TransferRequest | None
     raw_output: str
-    energy_before: int
-    energy_after: int
+    energy_before: float
+    energy_after: float
     events: list[WorldEvent] = field(default_factory=list)
 
 
@@ -52,7 +52,7 @@ class SimulationConfig:
     initial_energy: float = 8.0
     round_timeout: int = 900
     concurrency: int = 4
-    invoker: Literal["claude", "codex"] = "claude"
+    invoker: Literal["claude", "codex", "mixed"] = "mixed"
     dry_run: bool = False
     data_dir: str = "data"
     logs_dir: str = "logs"

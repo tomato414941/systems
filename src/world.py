@@ -9,7 +9,10 @@ from .config import get_agent_name
 def create_world(config: SimulationConfig) -> WorldState:
     agents: list[AgentState] = []
     for i in range(config.initial_agent_count):
-        invoker = "claude" if i < config.initial_agent_count // 2 else "codex"
+        if config.invoker == "mixed":
+            invoker = "claude" if i < config.initial_agent_count // 2 else "codex"
+        else:
+            invoker = config.invoker
         model = config.claude_model if invoker == "claude" else config.codex_model
         agents.append(AgentState(
             id=f"agent-{i}",

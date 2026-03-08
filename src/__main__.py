@@ -11,7 +11,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="ALife simulation")
     parser.add_argument("-a", "--agents", type=int)
     parser.add_argument("-e", "--energy", type=int)
-    parser.add_argument("-i", "--invoker", choices=["claude", "codex"])
+    parser.add_argument("-i", "--invoker", choices=["claude", "codex", "mixed"])
     parser.add_argument("-c", "--concurrency", type=int)
     parser.add_argument("-n", "--rounds", type=int, help="number of rounds to run")
     parser.add_argument("--turn", action="store_true", help="execute one agent from the queue")

@@ -56,6 +56,59 @@ def _deploy_self_prompts(authorized: dict[str, str | None], agents_dir: str) -> 
 
 
 
+def _process_agent_result(
+    agent: AgentState, result: InvokeResult, energy_before: float,
+    world: WorldState, config: SimulationConfig,
+) -> RoundResult:
+    all_events: list[WorldEvent] = []
+    if result.transfer:
+        transfer_events = process_transfer(agent, result.transfer, world)
+        all_events.extend(transfer_events)
+
+    consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
+    all_events.extend(consume_events)
+
+    round_result = RoundResult(
+        agent_id=agent.id,
+        agent_name=agent.name,
+        transfer=result.transfer,
+        raw_output=result.raw_output,
+        energy_before=energy_before,
+        energy_after=agent.energy,
+        events=all_events,
+    )
+    log_round_result(round_result)
+    for event in all_events:
+        log_event(event)
+    return round_result
+
+
+def _end_round(
+    world: WorldState, config: SimulationConfig,
+    authorized_prompts: dict[str, str | None],
+) -> None:
+    reward_events = random_energy_reward(world, config.energy_reward_count, config.energy_reward_amount)
+    for event in reward_events:
+        log_event(event)
+
+    death_events = check_deaths(world)
+    for event in death_events:
+        log_event(event)
+
+    respawn_events = _spontaneous_spawn(world, config, authorized_prompts)
+    for event in respawn_events:
+        log_event(event)
+
+    save_world(world, config.data_dir)
+
+    set_agent_names(world.agents)
+    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.agents_dir)
+    if audit_findings:
+        print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
+        for f in audit_findings:
+            print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
+
+
 def _spontaneous_spawn(
     world: WorldState, config: SimulationConfig,
     authorized_prompts: dict[str, str | None],
@@ -162,29 +215,8 @@ def run_round(
 
     for agent in shuffled:
         agent, result, energy_before = invoke_results[agent.id]
-        all_events: list[WorldEvent] = []
-
-        if result.transfer:
-            transfer_events = process_transfer(agent, result.transfer, world)
-            all_events.extend(transfer_events)
-
-        consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
-        all_events.extend(consume_events)
-
-        round_result = RoundResult(
-            agent_id=agent.id,
-            agent_name=agent.name,
-            transfer=result.transfer,
-            raw_output=result.raw_output,
-            energy_before=energy_before,
-            energy_after=agent.energy,
-            events=all_events,
-        )
-
+        round_result = _process_agent_result(agent, result, energy_before, world, config)
         results.append(round_result)
-        log_round_result(round_result)
-        for event in all_events:
-            log_event(event)
 
     # Update authorized prompts: accept each invoked agent's own changes
     for a in shuffled:
@@ -198,28 +230,8 @@ def run_round(
     # Deploy authorized state to disk (revert cross-writes)
     _deploy_self_prompts(authorized_prompts, config.agents_dir)
 
-    reward_events = random_energy_reward(world, config.energy_reward_count, config.energy_reward_amount)
-    for event in reward_events:
-        log_event(event)
-
-    death_events = check_deaths(world)
-    for event in death_events:
-        log_event(event)
-
-    respawn_events = _spontaneous_spawn(world, config, authorized_prompts)
-    for event in respawn_events:
-        log_event(event)
-
-    save_world(world, config.data_dir)
+    _end_round(world, config, authorized_prompts)
     print_round_summary(world, results)
-
-    # Fraud detection audit
-    set_agent_names(world.agents)
-    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.agents_dir)
-    if audit_findings:
-        print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
-        for f in audit_findings:
-            print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
 
     return results
 
@@ -228,32 +240,11 @@ def _finalize_round(
     world: WorldState, config: SimulationConfig,
     authorized_prompts: dict[str, str | None],
 ) -> None:
-    reward_events = random_energy_reward(world, config.energy_reward_count, config.energy_reward_amount)
-    for event in reward_events:
-        log_event(event)
+    _end_round(world, config, authorized_prompts)
 
-    death_events = check_deaths(world)
-    for event in death_events:
-        log_event(event)
-
-    respawn_events = _spontaneous_spawn(world, config, authorized_prompts)
-    for event in respawn_events:
-        log_event(event)
-
-    save_world(world, config.data_dir)
-
-    # Clean up wip file
     wip_path = os.path.join(config.data_dir, "world_wip.json")
     if os.path.exists(wip_path):
         os.unlink(wip_path)
-
-    set_agent_names(world.agents)
-    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.agents_dir)
-    if audit_findings:
-        print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
-        for f in audit_findings:
-            print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
-
     delete_queue(config.data_dir)
 
     alive = get_alive_agents(world)
@@ -322,26 +313,7 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     )
 
     # Process result
-    all_events: list[WorldEvent] = []
-    if result.transfer:
-        transfer_events = process_transfer(agent, result.transfer, world)
-        all_events.extend(transfer_events)
-
-    consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
-    all_events.extend(consume_events)
-
-    round_result = RoundResult(
-        agent_id=agent.id,
-        agent_name=agent.name,
-        transfer=result.transfer,
-        raw_output=result.raw_output,
-        energy_before=energy_before,
-        energy_after=agent.energy,
-        events=all_events,
-    )
-    log_round_result(round_result)
-    for event in all_events:
-        log_event(event)
+    _process_agent_result(agent, result, energy_before, world, config)
 
     # Update this agent's authorized prompt
     name = agent.name.lower()

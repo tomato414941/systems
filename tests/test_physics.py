@@ -22,14 +22,14 @@ def make_world(agents: list[AgentState]) -> WorldState:
 class TestConsumeEnergy:
     def test_decreases_energy_and_increments_age(self):
         agent = make_agent(energy=10)
-        events = consume_energy(agent, 1)
+        events = consume_energy(agent, 1, base_metabolism=1.0)
         assert agent.energy == 9
         assert agent.age == 1
         assert len(events) == 0
 
     def test_kills_agent_when_energy_reaches_zero(self):
         agent = make_agent(energy=1)
-        events = consume_energy(agent, 5)
+        events = consume_energy(agent, 5, base_metabolism=1.0)
         assert agent.energy == 0
         assert agent.alive is False
         assert len(events) == 1
