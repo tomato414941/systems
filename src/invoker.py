@@ -44,7 +44,7 @@ def invoke_agent(
     prompt = build_full_prompt(agent, world, shared_dir, agent_dir)
 
     agent_abs = os.path.abspath(agent_dir)
-    model = agent.model or ("sonnet" if agent.invoker == "claude" else "gpt-5.3-codex")
+    model = agent.model or ("claude-sonnet-4-5" if agent.invoker == "claude" else "gpt-5.3-codex")
     if agent.invoker == "codex":
         return _invoke_codex(prompt, agent, model, timeout, logs_dir, world.round, agent_abs)
     return _invoke_claude(prompt, agent, model, timeout, logs_dir, world.round, agent_abs)

@@ -61,5 +61,5 @@ class SimulationConfig:
     energy_reward_count: int = 3
     energy_reward_amount: float = 1.0
     base_metabolism: float = 1.0
-    claude_model: str = "sonnet"
+    claude_model: str = "claude-sonnet-4-5"
     codex_model: str = "gpt-5.3-codex"

@@ -36,6 +36,12 @@ def create_world(config: SimulationConfig) -> WorldState:
     return WorldState(round=0, agents=agents)
 
 
+_MODEL_ALIASES = {
+    "sonnet": "claude-sonnet-4-5",
+    "opus": "claude-opus-4-6",
+}
+
+
 def load_world(data_dir: str) -> WorldState | None:
     path = os.path.join(data_dir, "world.json")
     if not os.path.exists(path):
@@ -45,7 +51,8 @@ def load_world(data_dir: str) -> WorldState | None:
     agents: list[AgentState] = []
     for a in data["agents"]:
         if "model" not in a:
-            a["model"] = "sonnet" if a.get("invoker") == "claude" else "gpt-5.3-codex"
+            a["model"] = "claude-sonnet-4-5" if a.get("invoker") == "claude" else "gpt-5.3-codex"
+        a["model"] = _MODEL_ALIASES.get(a["model"], a["model"])
         agents.append(AgentState(**a))
     return WorldState(round=data["round"], agents=agents)
 
