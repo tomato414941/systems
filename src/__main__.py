@@ -13,8 +13,9 @@ def main() -> None:
     parser.add_argument("-e", "--energy", type=int)
     parser.add_argument("-i", "--invoker", choices=["claude", "codex", "mixed"])
     parser.add_argument("-c", "--concurrency", type=int)
-    parser.add_argument("-n", "--rounds", type=int, help="number of rounds to run")
-    parser.add_argument("--turn", action="store_true", help="execute one agent turn")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("-n", "--rounds", type=int, help="number of rounds to run")
+    mode.add_argument("-t", "--turns", type=int, help="number of turns to run")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--claude-model", type=str, help="model for claude agents")
     parser.add_argument("--codex-model", type=str, help="model for codex agents")
@@ -40,8 +41,9 @@ def main() -> None:
     else:
         world = create_world(config)
 
-    if args.turn:
-        run_turn(world, config)
+    if args.turns:
+        for _ in range(args.turns):
+            run_turn(world, config)
     else:
         run_simulation(world, config, max_rounds=args.rounds)
 
