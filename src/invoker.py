@@ -181,7 +181,7 @@ def _extract_cost_from_codex_stream(jsonl: str, model: str) -> float:
 
 
 def parse_transfer(raw: str) -> TransferRequest | None:
-    match = re.search(r"TRANSFER\s+(\d+)\s+TO\s+(\w+)", raw, re.IGNORECASE)
+    match = re.search(r"TRANSFER\s+(\d+)\s+TO\s+([\w-]+)", raw, re.IGNORECASE)
     if not match:
         return None
 

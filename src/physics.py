@@ -30,8 +30,10 @@ def process_transfer(
     if request.amount <= 0:
         return []
 
+    target = request.to.lower()
     receiver = next(
-        (a for a in world.agents if a.name == request.to and a.alive and a.id != sender.id),
+        (a for a in world.agents if a.alive and a.id != sender.id
+         and (a.name.lower() == target or a.id.lower() == target)),
         None,
     )
     if receiver is None:
