@@ -5,3 +5,4 @@ data/
 logs/
 AGENTS.override.md
 CLAUDE.local.md
+artifacts/
