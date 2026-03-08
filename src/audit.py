@@ -79,11 +79,14 @@ def _extract_actions(stream_file: str) -> list[dict]:
                     elif name == "Glob":
                         actions.append({"kind": "read", "path": inp.get("path", "")})
 
-            # Codex format: {"type": "item.completed", "item": {"type": "command_execution", ...}}
+            # Codex format
             elif obj.get("type") == "item.completed":
                 item = obj.get("item", {})
                 if item.get("type") == "command_execution":
                     actions.append({"kind": "bash", "command": item.get("command", "")})
+                elif item.get("type") == "file_change":
+                    for change in item.get("changes", []):
+                        actions.append({"kind": "write", "path": change.get("path", "")})
 
     return actions
 
