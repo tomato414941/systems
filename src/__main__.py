@@ -1,10 +1,62 @@
 import argparse
+import os
 
 from .types import SimulationConfig
 from .config import DEFAULT_CONFIG
-from .world import create_world, load_world, load_world_wip
-from .logger import init_logger
+from .world import create_world, load_world, load_world_wip, save_world, save_world_wip, find_agent
+from .physics import apply_gift
+from .logger import init_logger, log_event
 from .orchestrator import run_simulation, run_turn
+
+
+def _handle_gift(args) -> None:
+    agent_name, amount_str = args.gift
+    try:
+        amount = float(amount_str)
+    except ValueError:
+        print(f"Error: amount must be a number, got '{amount_str}'")
+        return
+    if amount <= 0:
+        print("Error: amount must be positive")
+        return
+
+    data_dir = DEFAULT_CONFIG.data_dir
+    world = load_world_wip(data_dir) or load_world(data_dir)
+    if not world:
+        print("Error: no world state found")
+        return
+
+    agent = find_agent(world, agent_name)
+    if not agent:
+        names = ", ".join(a.name for a in world.agents)
+        print(f"Error: '{agent_name}' not found. Agents: {names}")
+        return
+
+    if not agent.alive:
+        agent.alive = True
+        print(f"Reviving {agent.name} (was dead)")
+
+    init_logger(DEFAULT_CONFIG.logs_dir)
+    events = apply_gift(agent, amount, world.round, message=args.message or "")
+    for event in events:
+        log_event(event)
+
+    if args.message:
+        agent_dir = os.path.join(DEFAULT_CONFIG.agents_dir, agent.name.lower())
+        os.makedirs(agent_dir, exist_ok=True)
+        msg_path = os.path.join(agent_dir, "human_message.md")
+        with open(msg_path, "w") as f:
+            f.write(args.message)
+
+    wip_path = os.path.join(data_dir, "world_wip.json")
+    if os.path.exists(wip_path):
+        save_world_wip(world, data_dir)
+    else:
+        save_world(world, data_dir)
+
+    print(f"Gifted {amount:.1f} energy to {agent.name} (now E={agent.energy:.2f})")
+    if args.message:
+        print(f"Message queued for {agent.name}'s next turn")
 
 
 def main() -> None:
@@ -16,10 +68,18 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("-n", "--rounds", type=int, help="number of rounds to run")
     mode.add_argument("-t", "--turns", type=int, help="number of turns to run")
+    parser.add_argument("--gift", nargs=2, metavar=("AGENT", "AMOUNT"),
+                        help="gift energy to an agent")
+    parser.add_argument("-m", "--message", type=str, default="",
+                        help="message to send with --gift")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--claude-model", type=str, help="model for claude agents")
     parser.add_argument("--codex-model", type=str, help="model for codex agents")
     args = parser.parse_args()
+
+    if args.gift:
+        _handle_gift(args)
+        return
 
     config = SimulationConfig(
         initial_agent_count=args.agents or DEFAULT_CONFIG.initial_agent_count,

@@ -3,6 +3,7 @@ import os
 from .types import AgentState, WorldState
 
 SELF_PROMPT_FILE = "self_prompt.md"
+HUMAN_MESSAGE_FILE = "human_message.md"
 
 
 def build_system_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
@@ -35,12 +36,21 @@ Rules:
 def build_full_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
     system = build_system_prompt(agent, world, shared_dir, agent_dir)
 
+    human_msg_path = os.path.join(agent_dir, HUMAN_MESSAGE_FILE)
+    human_msg = ""
+    if os.path.exists(human_msg_path):
+        with open(human_msg_path) as f:
+            human_msg = f.read().strip()
+        os.unlink(human_msg_path)
+
     self_prompt_path = os.path.join(agent_dir, SELF_PROMPT_FILE)
     self_prompt = ""
     if os.path.exists(self_prompt_path):
         with open(self_prompt_path) as f:
             self_prompt = f.read().strip()
 
+    if human_msg:
+        system = f"{system}\n\n--- Message from the Human ---\n{human_msg}"
     if self_prompt:
         return f"{system}\n\n---\n\n{self_prompt}"
     return system

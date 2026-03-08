@@ -68,6 +68,16 @@ def random_energy_reward(world: WorldState, count: int, amount: int) -> list[Wor
     return events
 
 
+def apply_gift(agent: AgentState, amount: float, round_num: int, message: str = "") -> list[WorldEvent]:
+    if amount <= 0:
+        return []
+    agent.energy += amount
+    details = {"amount": amount, "source": "human"}
+    if message:
+        details["message"] = message
+    return [WorldEvent(round=round_num, type="human_gift", agent_id=agent.id, details=details)]
+
+
 def check_deaths(world: WorldState) -> list[WorldEvent]:
     events: list[WorldEvent] = []
     for agent in world.agents:

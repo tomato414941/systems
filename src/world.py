@@ -89,3 +89,11 @@ def remove_world(data_dir: str) -> None:
 
 def get_alive_agents(world: WorldState) -> list[AgentState]:
     return [a for a in world.agents if a.alive]
+
+
+def find_agent(world: WorldState, identifier: str) -> AgentState | None:
+    target = identifier.lower()
+    return next(
+        (a for a in world.agents if a.name.lower() == target or a.id.lower() == target),
+        None,
+    )
