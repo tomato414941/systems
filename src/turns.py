@@ -7,7 +7,6 @@ from .types import WorldState
 
 
 TURNS_FILE = "turns.json"
-WIP_WORLD_FILE = "world_wip.json"
 
 
 @dataclass
@@ -43,12 +42,11 @@ def save_turns(turns: TurnState, data_dir: str) -> None:
 
 
 def delete_turns(data_dir: str) -> None:
-    for name in (TURNS_FILE, WIP_WORLD_FILE):
-        path = os.path.join(data_dir, name)
-        try:
-            os.unlink(path)
-        except FileNotFoundError:
-            pass
+    path = os.path.join(data_dir, TURNS_FILE)
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
 
 
 def create_turns(world: WorldState) -> TurnState:

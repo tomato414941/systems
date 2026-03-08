@@ -3,7 +3,7 @@ import os
 
 from .types import SimulationConfig
 from .config import DEFAULT_CONFIG
-from .world import create_world, load_world, load_world_wip, save_world, save_world_wip, find_agent
+from .world import create_world, load_world, save_world, find_agent
 from .physics import apply_gift
 from .logger import init_logger, log_event
 from .orchestrator import run_simulation, run_turn
@@ -21,7 +21,7 @@ def _handle_gift(args) -> None:
         return
 
     data_dir = DEFAULT_CONFIG.data_dir
-    world = load_world_wip(data_dir) or load_world(data_dir)
+    world = load_world(data_dir)
     if not world:
         print("Error: no world state found")
         return
@@ -48,11 +48,7 @@ def _handle_gift(args) -> None:
         with open(msg_path, "w") as f:
             f.write(args.message)
 
-    wip_path = os.path.join(data_dir, "world_wip.json")
-    if os.path.exists(wip_path):
-        save_world_wip(world, data_dir)
-    else:
-        save_world(world, data_dir)
+    save_world(world, data_dir)
 
     print(f"Gifted {amount:.1f} energy to {agent.name} (now E={agent.energy:.2f})")
     if args.message:
@@ -93,8 +89,7 @@ def main() -> None:
 
     init_logger(config.logs_dir)
 
-    # Try wip first (mid-round state from --turn), then world.json, then create new
-    world = load_world_wip(config.data_dir) or load_world(config.data_dir)
+    world = load_world(config.data_dir)
     if world:
         alive = [a for a in world.agents if a.alive]
         print(f"Resuming: {len(alive)} alive, round {world.round}")

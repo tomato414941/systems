@@ -3,7 +3,7 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
-from .world import get_alive_agents, save_world, save_world_wip, load_world_wip, remove_world
+from .world import get_alive_agents, save_world
 from .config import get_agent_name
 from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
 from .invoker import invoke_agent, InvokeResult
@@ -177,15 +177,12 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
         save_turns(turns, config.data_dir)
         authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
         _deploy_self_prompts(authorized_prompts, config.agents_dir)
-        remove_world(config.data_dir)
-        save_world_wip(world, config.data_dir)
+        save_world(world, config.data_dir)
         alive = get_alive_agents(world)
         print(f"\n=== Round {world.round} ({len(alive)} alive) ===", flush=True)
     else:
-        wip = load_world_wip(config.data_dir)
-        if wip:
-            world.round = wip.round
-            world.agents = wip.agents
+        # Don't reload from disk — use in-memory state to prevent agent tampering.
+        # __main__.py already loads world.json at startup.
         authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
 
     return turns, authorized_prompts
@@ -216,9 +213,6 @@ def _finalize_round(
         for f in audit_findings:
             print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
 
-    wip_path = os.path.join(config.data_dir, "world_wip.json")
-    if os.path.exists(wip_path):
-        os.unlink(wip_path)
     delete_turns(config.data_dir)
 
 
@@ -256,7 +250,6 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     print(f"  turn: {agent.name} ({remaining} remaining)")
 
     _deploy_self_prompts(authorized_prompts, config.agents_dir)
-    remove_world(config.data_dir)
 
     energy_before = agent.energy
     _, result = _invoke_worker(
@@ -272,7 +265,7 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     if not turns.pending:
         turns.phase = "finalize"
     save_turns(turns, config.data_dir)
-    save_world_wip(world, config.data_dir)
+    save_world(world, config.data_dir)
 
     print(f"  [{agent.name}] E={energy_before:.2f} -> {agent.energy:.2f}")
     if not turns.pending:
@@ -296,7 +289,6 @@ def run_round(
             turns.completed.append(agent_id)
 
     _deploy_self_prompts(authorized_prompts, config.agents_dir)
-    remove_world(config.data_dir)
 
     # Invoke all with concurrency
     invoke_results: dict[str, tuple[AgentState, InvokeResult, float]] = {}
