@@ -290,12 +290,15 @@ def _designed_spawn(
 
     designed_name, designed_prompt = _design_self_prompt(world, config)
 
+    if not designed_prompt:
+        print(f"  [design] skipped — prompt generation failed")
+        return []
+
     child = _create_agent(
         world, config, invoker, model,
         authorized_prompts, designed_prompt,
     )
 
-    # Override name if designer provided one
     if designed_name:
         old_name = child.name.lower()
         child.name = designed_name
