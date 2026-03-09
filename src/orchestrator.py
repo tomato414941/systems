@@ -185,7 +185,7 @@ def _design_self_prompt(world: WorldState, config: SimulationConfig) -> tuple[st
     if config.dry_run:
         return "Designed", "I am a designed agent. I will explore and experiment."
 
-    template_path = os.path.join(os.path.dirname(__file__), "designer_prompt.txt")
+    template_path = os.path.join(os.path.dirname(__file__), "agent_designer_prompt.md")
     with open(template_path) as f:
         designer_prompt = f.read().format(
             data_dir=os.path.abspath(config.data_dir),
