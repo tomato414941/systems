@@ -6,43 +6,50 @@ from pathlib import PurePosixPath
 from .types import AgentState
 
 
-def audit_round(
+def audit_agent(
     round_num: int,
-    agents: list[AgentState],
+    agent: AgentState,
     logs_dir: str,
     agents_dir: str,
 ) -> list[dict]:
-    """Scan stream logs for suspicious actions. Returns list of findings."""
-    findings: list[dict] = []
+    """Scan a single agent's stream log for suspicious actions."""
     stream_dir = os.path.join(logs_dir, "streams")
+    candidates = [
+        os.path.join(stream_dir, f"r{round_num}-{agent.name.lower()}.jsonl"),
+        os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl"),
+    ]
+    stream_file = None
+    for c in candidates:
+        if os.path.exists(c):
+            stream_file = c
+            break
+    if not stream_file:
+        return []
 
-    for agent in agents:
-        if not agent.alive:
-            continue
-        # Try both naming conventions (name-based and id-based)
-        candidates = [
-            os.path.join(stream_dir, f"r{round_num}-{agent.name.lower()}.jsonl"),
-            os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl"),
-        ]
-        stream_file = None
-        for c in candidates:
-            if os.path.exists(c):
-                stream_file = c
-                break
-        if not stream_file:
-            continue
+    actions = _extract_actions(stream_file)
+    findings = _check_rules(round_num, agent, actions, agents_dir)
 
-        actions = _extract_actions(stream_file)
-        agent_findings = _check_rules(round_num, agent, actions, agents_dir)
-        findings.extend(agent_findings)
-
-    # Persist to logs/audit.jsonl
     if findings:
         audit_path = os.path.join(logs_dir, "audit.jsonl")
         with open(audit_path, "a") as f:
             for finding in findings:
                 f.write(json.dumps(finding) + "\n")
 
+    return findings
+
+
+def audit_round(
+    round_num: int,
+    agents: list[AgentState],
+    logs_dir: str,
+    agents_dir: str,
+) -> list[dict]:
+    """Scan all agents' stream logs for suspicious actions."""
+    findings: list[dict] = []
+    for agent in agents:
+        if not agent.alive:
+            continue
+        findings.extend(audit_agent(round_num, agent, logs_dir, agents_dir))
     return findings
 
 

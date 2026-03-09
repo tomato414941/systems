@@ -9,7 +9,7 @@ from .physics import consume_energy, process_transfer, check_deaths, random_ener
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
 from .prompt import SELF_PROMPT_FILE
-from .audit import audit_round, set_agent_names
+from .audit import audit_agent, audit_round, set_agent_names
 from .turns import load_turns, save_turns, delete_turns, create_turns
 
 
@@ -206,13 +206,6 @@ def _finalize_round(
 
     save_world(world, config.data_dir)
 
-    set_agent_names(world.agents)
-    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.agents_dir)
-    if audit_findings:
-        print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
-        for f in audit_findings:
-            print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
-
     delete_turns(config.data_dir)
 
 
@@ -268,6 +261,15 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     save_world(world, config.data_dir)
 
     print(f"  [{agent.name}] E={energy_before:.2f} -> {agent.energy:.2f}")
+
+    # Audit immediately after turn
+    set_agent_names(world.agents)
+    findings = audit_agent(world.round, agent, config.logs_dir, config.agents_dir)
+    if findings:
+        print(f"  [audit] {len(findings)} suspicious action(s):")
+        for f in findings:
+            print(f"    - [{f['rule']}]: {f['detail'][:120]}")
+
     if not turns.pending:
         print(f"  All agents done. Run --turn again to finalize round.")
 
@@ -317,6 +319,14 @@ def run_round(
     for a in pending:
         _update_agent_prompt(a, config.agents_dir, authorized_prompts)
     _deploy_self_prompts(authorized_prompts, config.agents_dir)
+
+    # Audit all agents
+    set_agent_names(world.agents)
+    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.agents_dir)
+    if audit_findings:
+        print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
+        for f in audit_findings:
+            print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
 
     # Finalize
     _finalize_round(world, config, authorized_prompts)
