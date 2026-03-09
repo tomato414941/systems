@@ -180,7 +180,10 @@ def _parse_designed_output(output: str) -> tuple[str | None, str | None]:
     return None, output.strip() or None
 
 
-def _design_self_prompt(world: WorldState, config: SimulationConfig) -> tuple[str | None, str | None]:
+def _design_self_prompt(
+    world: WorldState, config: SimulationConfig,
+    designer_invoker: str, designer_model: str,
+) -> tuple[str | None, str | None]:
     """Call an external AI to design a self_prompt for a new agent. Returns (name, prompt)."""
     if config.dry_run:
         return "Designed", "I am a designed agent. I will explore and experiment."
@@ -193,8 +196,6 @@ def _design_self_prompt(world: WorldState, config: SimulationConfig) -> tuple[st
             agents_dir=os.path.abspath(config.agents_dir),
         )
 
-    _DESIGNER_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
-    designer_invoker, designer_model = random.choice(_DESIGNER_MODELS)
     print(f"  [design] generating prompt with {designer_invoker}/{designer_model}...")
 
     fd, prompt_file = tempfile.mkstemp(prefix="systems-designer-", suffix=".txt")
@@ -242,12 +243,13 @@ def _design_self_prompt(world: WorldState, config: SimulationConfig) -> tuple[st
 def _designed_spawn(
     world: WorldState, config: SimulationConfig,
     authorized_prompts: dict[str, str | None],
+    designer_invoker: str, designer_model: str,
 ) -> list[WorldEvent]:
     """Spawn a fresh agent via intelligent design — AI-generated self_prompt, top-tier model."""
     _TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
     invoker, model = random.choice(_TOP_MODELS)
 
-    designed_name, designed_prompt = _design_self_prompt(world, config)
+    designed_name, designed_prompt = _design_self_prompt(world, config, designer_invoker, designer_model)
 
     if not designed_prompt:
         print(f"  [design] skipped — prompt generation failed")
@@ -287,11 +289,12 @@ def _designed_spawn(
 
 
 def run_designed_spawn(world: WorldState, config: SimulationConfig) -> None:
-    """Run a single designed spawn outside of the normal round lifecycle."""
+    """Run designed spawns outside of the normal round lifecycle."""
     authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
-    events = _designed_spawn(world, config, authorized_prompts)
-    for event in events:
-        log_event(event)
+    for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
+        events = _designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
+        for event in events:
+            log_event(event)
     _deploy_self_prompts(authorized_prompts, config.agents_dir)
     save_world(world, config.data_dir)
 
@@ -337,9 +340,10 @@ def _finalize_round(
     for event in respawn_events:
         log_event(event)
 
-    design_events = _designed_spawn(world, config, authorized_prompts)
-    for event in design_events:
-        log_event(event)
+    for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
+        design_events = _designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
+        for event in design_events:
+            log_event(event)
 
     save_world(world, config.data_dir)
 
