@@ -54,6 +54,14 @@ def default_model(invoker: str) -> str:
     return INVOKERS[invoker]["default_model"]
 
 
+def random_invoker_model() -> tuple[str, str]:
+    """Pick a random invoker and its default model (resolved)."""
+    import random
+    invoker = random.choice(list(INVOKERS.keys()))
+    model = resolve_model(INVOKERS[invoker]["default_model"])
+    return invoker, model
+
+
 DEFAULT_CONFIG = SimulationConfig()
 
 

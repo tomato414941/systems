@@ -1,10 +1,13 @@
+import json
 import os
 import random
+import subprocess
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
-from .config import get_agent_name
+from .config import get_agent_name, random_invoker_model
 from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
@@ -163,6 +166,150 @@ def _spontaneous_spawn(
     return [event]
 
 
+def _design_self_prompt(world: WorldState, config: SimulationConfig) -> str | None:
+    """Call an external AI to design a self_prompt for a new agent."""
+    if config.dry_run:
+        return "I am a designed agent. I will explore and experiment."
+
+    alive = [a for a in world.agents if a.alive]
+    agent_lines = "\n".join(
+        f"- {a.name}: E={a.energy:.1f}, age={a.age}, {a.invoker}/{a.model}"
+        for a in alive
+    )
+
+    # Summarize shared files for cultural context
+    shared_summary = ""
+    if os.path.isdir(config.shared_dir):
+        files = sorted(os.listdir(config.shared_dir))
+        shared_summary = f"{len(files)} shared files: {', '.join(files[:20])}"
+        # Read a few recent files for content
+        samples = []
+        for fname in files[-3:]:
+            path = os.path.join(config.shared_dir, fname)
+            if os.path.isfile(path):
+                try:
+                    with open(path) as f:
+                        samples.append(f"{fname}:\n{f.read()[:300]}")
+                except Exception:
+                    pass
+        if samples:
+            shared_summary += "\n\nRecent file samples:\n" + "\n---\n".join(samples)
+
+    designer_prompt = f"""You are the Designer of an artificial life simulation. You create the initial personality/strategy document (self_prompt.md) for a new agent being born into this world.
+
+World state (round {world.round}):
+{agent_lines}
+
+Shared workspace: {shared_summary}
+
+Rules of this world:
+- Agents have energy. When it hits 0, they die permanently.
+- Energy drains from metabolism (fixed) and compute cost (token usage).
+- Agents can TRANSFER energy to each other.
+- A human observer gifts energy to agents they find interesting.
+- Agents can read/write shared files and edit their own self_prompt.md.
+
+Your task: Write a self_prompt.md (max 150 words) for a NEW agent. It should:
+- Bring something FRESH — avoid copying what existing agents already do
+- Give the agent a distinct personality or strategy
+- Be concise (the agent pays energy per token it processes)
+
+Output ONLY the self_prompt.md content. No explanations, no markdown fences."""
+
+    fd, prompt_file = tempfile.mkstemp(prefix="systems-designer-", suffix=".txt")
+    try:
+        os.write(fd, designer_prompt.encode())
+        os.close(fd)
+
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        result = subprocess.run(
+            ["sh", "-c", f'cat "{prompt_file}" | claude -p --model claude-haiku-4-5-20251001'],
+            capture_output=True, text=True, timeout=120, env=env,
+        )
+        output = result.stdout.strip()
+        if output and result.returncode == 0:
+            return output
+        print(f"  [design] AI prompt generation failed: {result.stderr[:200]}")
+        return None
+    except Exception as e:
+        print(f"  [design] AI prompt generation error: {e}")
+        return None
+    finally:
+        try:
+            os.unlink(prompt_file)
+        except OSError:
+            pass
+
+
+def _designed_spawn(
+    world: WorldState, config: SimulationConfig,
+    authorized_prompts: dict[str, str | None],
+) -> list[WorldEvent]:
+    """Spawn a fresh agent via intelligent design — AI-generated self_prompt, random invoker/model."""
+    invoker, model = random_invoker_model()
+
+    dead = [a for a in world.agents if not a.alive]
+    if dead:
+        child = random.choice(dead)
+        action = f"filled dead slot {child.name}"
+    else:
+        new_index = len(world.agents)
+        child = AgentState(
+            id=f"agent-{new_index}",
+            name=get_agent_name(new_index),
+            energy=0,
+            alive=False,
+            age=0,
+            invoker=invoker,
+            model=model,
+        )
+        world.agents.append(child)
+        agent_dir = os.path.join(config.agents_dir, child.name.lower())
+        os.makedirs(agent_dir, exist_ok=True)
+        shared_abs = os.path.abspath(config.shared_dir)
+        link = os.path.join(agent_dir, "shared")
+        if not os.path.exists(link):
+            os.symlink(shared_abs, link)
+        action = f"new agent {child.name}"
+
+    child.invoker = invoker
+    child.model = model
+    child.energy = config.initial_energy
+    child.alive = True
+    child.age = 0
+
+    # AI-designed self_prompt
+    designed_prompt = _design_self_prompt(world, config)
+    child_name = child.name.lower()
+    child_prompt_path = os.path.join(config.agents_dir, child_name, SELF_PROMPT_FILE)
+    if designed_prompt:
+        authorized_prompts[child_name] = designed_prompt
+        os.makedirs(os.path.join(config.agents_dir, child_name), exist_ok=True)
+        with open(child_prompt_path, "w") as f:
+            f.write(designed_prompt)
+    else:
+        authorized_prompts[child_name] = None
+        if os.path.exists(child_prompt_path):
+            os.unlink(child_prompt_path)
+
+    event = WorldEvent(
+        round=world.round,
+        type="designed_spawn",
+        agent_id=child.id,
+        details={
+            "invoker": child.invoker,
+            "model": child.model,
+            "designed_prompt": designed_prompt[:200] if designed_prompt else None,
+        },
+    )
+    prompt_preview = designed_prompt[:60] + "..." if designed_prompt and len(designed_prompt) > 60 else designed_prompt
+    print(f"  [design] -> {child.name} ({action}, {child.invoker}/{child.model})")
+    if prompt_preview:
+        print(f"  [design] prompt: {prompt_preview}")
+
+    return [event]
+
+
 # ---------------------------------------------------------------------------
 # Round lifecycle (turn-based)
 # ---------------------------------------------------------------------------
@@ -202,6 +349,10 @@ def _finalize_round(
 
     respawn_events = _spontaneous_spawn(world, config, authorized_prompts)
     for event in respawn_events:
+        log_event(event)
+
+    design_events = _designed_spawn(world, config, authorized_prompts)
+    for event in design_events:
         log_event(event)
 
     save_world(world, config.data_dir)
