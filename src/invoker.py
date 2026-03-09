@@ -173,7 +173,9 @@ def _extract_cost_from_codex_stream(jsonl: str, model: str) -> float:
 
 
 def parse_transfer(raw: str) -> TransferRequest | None:
-    match = re.search(r"TRANSFER\s+(\d+)\s+TO\s+([\w-]+)", raw, re.IGNORECASE)
+    # Only match TRANSFER on its own line to avoid false positives from
+    # analysis text like "if I transfer 5 to agent-9..."
+    match = re.search(r"^\s*TRANSFER\s+(\d+)\s+TO\s+([\w-]+)\s*$", raw, re.IGNORECASE | re.MULTILINE)
     if not match:
         return None
 
