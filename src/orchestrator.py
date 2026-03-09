@@ -218,17 +218,38 @@ Your task: Write a self_prompt.md (max 150 words) for a NEW agent. It should:
 
 Output ONLY the self_prompt.md content. No explanations, no markdown fences."""
 
+    _DESIGNER_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
+    designer_invoker, designer_model = random.choice(_DESIGNER_MODELS)
+    print(f"  [design] generating prompt with {designer_invoker}/{designer_model}...")
+
     fd, prompt_file = tempfile.mkstemp(prefix="systems-designer-", suffix=".txt")
     try:
         os.write(fd, designer_prompt.encode())
         os.close(fd)
 
         env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
-        result = subprocess.run(
-            ["sh", "-c", f'cat "{prompt_file}" | claude -p --model claude-haiku-4-5-20251001'],
-            capture_output=True, text=True, timeout=120, env=env,
-        )
-        output = result.stdout.strip()
+        if designer_invoker == "claude":
+            result = subprocess.run(
+                ["sh", "-c", f'cat "{prompt_file}" | claude -p --model {designer_model}'],
+                capture_output=True, text=True, timeout=120, env=env,
+            )
+            output = result.stdout.strip()
+        else:
+            fd2, output_file = tempfile.mkstemp(prefix="systems-designer-out-", suffix=".txt")
+            os.close(fd2)
+            try:
+                result = subprocess.run(
+                    ["sh", "-c", f'cat "{prompt_file}" | codex exec --json -m {designer_model} -o "{output_file}" --sandbox danger-full-access'],
+                    capture_output=True, text=True, timeout=120, env=env,
+                )
+                with open(output_file) as f:
+                    output = f.read().strip()
+            finally:
+                try:
+                    os.unlink(output_file)
+                except OSError:
+                    pass
+
         if output and result.returncode == 0:
             return output
         print(f"  [design] AI prompt generation failed: {result.stderr[:200]}")
