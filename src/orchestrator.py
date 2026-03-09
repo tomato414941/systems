@@ -311,6 +311,16 @@ def _designed_spawn(
     return [event]
 
 
+def run_designed_spawn(world: WorldState, config: SimulationConfig) -> None:
+    """Run a single designed spawn outside of the normal round lifecycle."""
+    authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
+    events = _designed_spawn(world, config, authorized_prompts)
+    for event in events:
+        log_event(event)
+    _deploy_self_prompts(authorized_prompts, config.agents_dir)
+    save_world(world, config.data_dir)
+
+
 # ---------------------------------------------------------------------------
 # Round lifecycle (turn-based)
 # ---------------------------------------------------------------------------

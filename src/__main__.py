@@ -6,7 +6,7 @@ from .config import DEFAULT_CONFIG
 from .world import create_world, load_world, save_world, find_agent
 from .physics import apply_gift
 from .logger import init_logger, log_event
-from .orchestrator import run_simulation, run_turn
+from .orchestrator import run_simulation, run_turn, run_designed_spawn
 
 
 def _handle_gift(args) -> None:
@@ -64,6 +64,7 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("-n", "--rounds", type=int, help="number of rounds to run")
     mode.add_argument("-t", "--turns", type=int, help="number of turns to run")
+    mode.add_argument("--spawn", action="store_true", help="run designed spawn only")
     parser.add_argument("--gift", nargs=2, metavar=("AGENT", "AMOUNT"),
                         help="gift energy to an agent")
     parser.add_argument("-m", "--message", type=str, default="",
@@ -96,7 +97,9 @@ def main() -> None:
     else:
         world = create_world(config)
 
-    if args.turns:
+    if args.spawn:
+        run_designed_spawn(world, config)
+    elif args.turns:
         for _ in range(args.turns):
             run_turn(world, config)
     else:
