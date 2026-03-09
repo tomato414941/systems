@@ -3,7 +3,8 @@ import os
 from .types import AgentState, WorldState
 
 SELF_PROMPT_FILE = "self_prompt.md"
-HUMAN_MESSAGE_FILE = "human_message.md"
+HUMAN_TO_AGENT_FILE = "human_to_agent.md"
+AGENT_TO_HUMAN_FILE = "agent_to_human.md"
 
 
 def build_system_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
@@ -23,13 +24,14 @@ Rules:
 - You are autonomous. Survive. Find ways to gain energy.
 - Every round, one entity spontaneously reproduces: a random survivor's mind (invoker and self_prompt.md) is copied into a new entity. Population can grow. But resources are finite — when energy runs out, you die.
 - A human oversees this world. They may gift energy or send messages to entities they find interesting.
+- You can write to {AGENT_TO_HUMAN_FILE} in your private workspace to send a message to the human. It will be delivered after your turn and then deleted.
 - You may read the simulation source code at ../../src/ for understanding."""
 
 
 def build_full_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
     system = build_system_prompt(agent, world, shared_dir, agent_dir)
 
-    human_msg_path = os.path.join(agent_dir, HUMAN_MESSAGE_FILE)
+    human_msg_path = os.path.join(agent_dir, HUMAN_TO_AGENT_FILE)
     human_msg = ""
     if os.path.exists(human_msg_path):
         with open(human_msg_path) as f:

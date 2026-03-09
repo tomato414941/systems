@@ -44,7 +44,7 @@ def _handle_gift(args) -> None:
     if args.message:
         agent_dir = os.path.join(DEFAULT_CONFIG.agents_dir, agent.name.lower())
         os.makedirs(agent_dir, exist_ok=True)
-        msg_path = os.path.join(agent_dir, "human_message.md")
+        msg_path = os.path.join(agent_dir, "human_to_agent.md")
         with open(msg_path, "w") as f:
             f.write(args.message)
 

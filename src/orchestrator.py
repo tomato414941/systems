@@ -11,7 +11,7 @@ from .config import get_agent_name, random_invoker_model
 from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
-from .prompt import SELF_PROMPT_FILE
+from .prompt import SELF_PROMPT_FILE, AGENT_TO_HUMAN_FILE
 from .audit import audit_agent, audit_round, set_agent_names
 from .turns import load_turns, save_turns, delete_turns, create_turns
 
@@ -71,6 +71,17 @@ def _update_agent_prompt(
             authorized_prompts[name] = f.read()
     else:
         authorized_prompts[name] = None
+
+
+def _collect_agent_message(agent: AgentState, agents_dir: str) -> None:
+    """Read and display agent_to_human.md, then delete it."""
+    msg_path = os.path.join(agents_dir, agent.name.lower(), AGENT_TO_HUMAN_FILE)
+    if os.path.exists(msg_path):
+        with open(msg_path) as f:
+            msg = f.read().strip()
+        os.unlink(msg_path)
+        if msg:
+            print(f"  [message from {agent.name}] {msg}")
 
 
 def _process_agent_result(
@@ -411,6 +422,9 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
         for f in findings:
             print(f"    - [{f['rule']}]: {f['detail'][:120]}")
 
+    # Check for agent-to-human message
+    _collect_agent_message(agent, config.agents_dir)
+
     if not turns.pending:
         print(f"  All agents done. Run --turn again to finalize round.")
 
@@ -468,6 +482,10 @@ def run_round(
         print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
         for f in audit_findings:
             print(f"    - {f['agent']} [{f['rule']}]: {f['detail'][:120]}")
+
+    # Collect agent-to-human messages
+    for a in pending:
+        _collect_agent_message(a, config.agents_dir)
 
     # Finalize
     _finalize_round(world, config, authorized_prompts)
