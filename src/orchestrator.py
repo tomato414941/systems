@@ -249,29 +249,24 @@ def _designed_spawn(
     _TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
     invoker, model = random.choice(_TOP_MODELS)
 
-    dead = [a for a in world.agents if not a.alive]
-    if dead:
-        child = random.choice(dead)
-        action = f"filled dead slot {child.name}"
-    else:
-        new_index = len(world.agents)
-        child = AgentState(
-            id=f"agent-{new_index}",
-            name=get_agent_name(new_index),
-            energy=0,
-            alive=False,
-            age=0,
-            invoker=invoker,
-            model=model,
-        )
-        world.agents.append(child)
-        agent_dir = os.path.join(config.agents_dir, child.name.lower())
-        os.makedirs(agent_dir, exist_ok=True)
-        shared_abs = os.path.abspath(config.shared_dir)
-        link = os.path.join(agent_dir, "shared")
-        if not os.path.exists(link):
-            os.symlink(shared_abs, link)
-        action = f"new agent {child.name}"
+    new_index = len(world.agents)
+    child = AgentState(
+        id=f"agent-{new_index}",
+        name=get_agent_name(new_index),
+        energy=0,
+        alive=False,
+        age=0,
+        invoker=invoker,
+        model=model,
+    )
+    world.agents.append(child)
+    agent_dir = os.path.join(config.agents_dir, child.name.lower())
+    os.makedirs(agent_dir, exist_ok=True)
+    shared_abs = os.path.abspath(config.shared_dir)
+    link = os.path.join(agent_dir, "shared")
+    if not os.path.exists(link):
+        os.symlink(shared_abs, link)
+    action = f"new agent {child.name}"
 
     child.invoker = invoker
     child.model = model
