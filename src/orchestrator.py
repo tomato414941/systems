@@ -100,6 +100,44 @@ def _process_agent_result(
     return round_result
 
 
+def _create_agent(
+    world: WorldState, config: SimulationConfig,
+    invoker: str, model: str,
+    authorized_prompts: dict[str, str | None],
+    self_prompt_content: str | None,
+) -> AgentState:
+    """Create a new agent: state, directory, symlink, self_prompt, and activate."""
+    new_index = len(world.agents)
+    agent = AgentState(
+        id=f"agent-{new_index}",
+        name=get_agent_name(new_index),
+        energy=config.initial_energy,
+        alive=True,
+        age=0,
+        invoker=invoker,
+        model=model,
+    )
+    world.agents.append(agent)
+
+    agent_dir = os.path.join(config.agents_dir, agent.name.lower())
+    os.makedirs(agent_dir, exist_ok=True)
+    shared_abs = os.path.abspath(config.shared_dir)
+    link = os.path.join(agent_dir, "shared")
+    if not os.path.exists(link):
+        os.symlink(shared_abs, link)
+
+    name_lower = agent.name.lower()
+    authorized_prompts[name_lower] = self_prompt_content
+    prompt_path = os.path.join(agent_dir, SELF_PROMPT_FILE)
+    if self_prompt_content:
+        with open(prompt_path, "w") as f:
+            f.write(self_prompt_content)
+    elif os.path.exists(prompt_path):
+        os.unlink(prompt_path)
+
+    return agent
+
+
 def _spontaneous_spawn(
     world: WorldState, config: SimulationConfig,
     authorized_prompts: dict[str, str | None],
@@ -109,41 +147,12 @@ def _spontaneous_spawn(
         return []
 
     parent = random.choice(alive)
+    parent_prompt = authorized_prompts.get(parent.name.lower())
 
-    new_index = len(world.agents)
-    child = AgentState(
-        id=f"agent-{new_index}",
-        name=get_agent_name(new_index),
-        energy=0,
-        alive=False,
-        age=0,
-        invoker=parent.invoker,
-        model=parent.model,
+    child = _create_agent(
+        world, config, parent.invoker, parent.model,
+        authorized_prompts, parent_prompt,
     )
-    world.agents.append(child)
-    agent_dir = os.path.join(config.agents_dir, child.name.lower())
-    os.makedirs(agent_dir, exist_ok=True)
-    shared_abs = os.path.abspath(config.shared_dir)
-    link = os.path.join(agent_dir, "shared")
-    if not os.path.exists(link):
-        os.symlink(shared_abs, link)
-
-    child.invoker = parent.invoker
-    child.model = parent.model
-    parent_name = parent.name.lower()
-    child_name = child.name.lower()
-    authorized_prompts[child_name] = authorized_prompts.get(parent_name)
-    child_prompt = os.path.join(config.agents_dir, child_name, SELF_PROMPT_FILE)
-    content = authorized_prompts[child_name]
-    if content:
-        with open(child_prompt, "w") as f:
-            f.write(content)
-    elif os.path.exists(child_prompt):
-        os.unlink(child_prompt)
-
-    child.energy = config.initial_energy
-    child.alive = True
-    child.age = 0
 
     event = WorldEvent(
         round=world.round,
@@ -156,7 +165,6 @@ def _spontaneous_spawn(
         },
     )
     print(f"  [spawn] {parent.name} -> {child.name} (new agent, {child.invoker}/{child.model})")
-
     return [event]
 
 
@@ -243,44 +251,12 @@ def _designed_spawn(
     _TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
     invoker, model = random.choice(_TOP_MODELS)
 
-    new_index = len(world.agents)
-    child = AgentState(
-        id=f"agent-{new_index}",
-        name=get_agent_name(new_index),
-        energy=0,
-        alive=False,
-        age=0,
-        invoker=invoker,
-        model=model,
-    )
-    world.agents.append(child)
-    agent_dir = os.path.join(config.agents_dir, child.name.lower())
-    os.makedirs(agent_dir, exist_ok=True)
-    shared_abs = os.path.abspath(config.shared_dir)
-    link = os.path.join(agent_dir, "shared")
-    if not os.path.exists(link):
-        os.symlink(shared_abs, link)
-    action = f"new agent {child.name}"
-
-    child.invoker = invoker
-    child.model = model
-    child.energy = config.initial_energy
-    child.alive = True
-    child.age = 0
-
-    # AI-designed self_prompt
     designed_prompt = _design_self_prompt(world, config)
-    child_name = child.name.lower()
-    child_prompt_path = os.path.join(config.agents_dir, child_name, SELF_PROMPT_FILE)
-    if designed_prompt:
-        authorized_prompts[child_name] = designed_prompt
-        os.makedirs(os.path.join(config.agents_dir, child_name), exist_ok=True)
-        with open(child_prompt_path, "w") as f:
-            f.write(designed_prompt)
-    else:
-        authorized_prompts[child_name] = None
-        if os.path.exists(child_prompt_path):
-            os.unlink(child_prompt_path)
+
+    child = _create_agent(
+        world, config, invoker, model,
+        authorized_prompts, designed_prompt,
+    )
 
     event = WorldEvent(
         round=world.round,
@@ -293,10 +269,9 @@ def _designed_spawn(
         },
     )
     prompt_preview = designed_prompt[:60] + "..." if designed_prompt and len(designed_prompt) > 60 else designed_prompt
-    print(f"  [design] -> {child.name} ({action}, {child.invoker}/{child.model})")
+    print(f"  [design] -> {child.name} (new agent, {child.invoker}/{child.model})")
     if prompt_preview:
         print(f"  [design] prompt: {prompt_preview}")
-
     return [event]
 
 
