@@ -245,8 +245,9 @@ def _designed_spawn(
     world: WorldState, config: SimulationConfig,
     authorized_prompts: dict[str, str | None],
 ) -> list[WorldEvent]:
-    """Spawn a fresh agent via intelligent design — AI-generated self_prompt, random invoker/model."""
-    invoker, model = random_invoker_model()
+    """Spawn a fresh agent via intelligent design — AI-generated self_prompt, top-tier model."""
+    _TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
+    invoker, model = random.choice(_TOP_MODELS)
 
     dead = [a for a in world.agents if not a.alive]
     if dead:
