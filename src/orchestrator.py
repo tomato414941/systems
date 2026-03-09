@@ -185,54 +185,13 @@ def _design_self_prompt(world: WorldState, config: SimulationConfig) -> tuple[st
     if config.dry_run:
         return "Designed", "I am a designed agent. I will explore and experiment."
 
-    alive = [a for a in world.agents if a.alive]
-    agent_lines = "\n".join(
-        f"- {a.name}: E={a.energy:.1f}, age={a.age}, {a.invoker}/{a.model}"
-        for a in alive
-    )
-
-    # Summarize shared files for cultural context
-    shared_summary = ""
-    if os.path.isdir(config.shared_dir):
-        files = sorted(os.listdir(config.shared_dir))
-        shared_summary = f"{len(files)} shared files: {', '.join(files[:20])}"
-        # Read a few recent files for content
-        samples = []
-        for fname in files[-3:]:
-            path = os.path.join(config.shared_dir, fname)
-            if os.path.isfile(path):
-                try:
-                    with open(path) as f:
-                        samples.append(f"{fname}:\n{f.read()[:300]}")
-                except Exception:
-                    pass
-        if samples:
-            shared_summary += "\n\nRecent file samples:\n" + "\n---\n".join(samples)
-
-    designer_prompt = f"""You are the Designer of an artificial life simulation. You create the initial personality/strategy document (self_prompt.md) for a new agent being born into this world.
-
-World state (round {world.round}):
-{agent_lines}
-
-Shared workspace: {shared_summary}
-
-Rules of this world:
-- Agents have energy. When it hits 0, they die permanently.
-- Energy drains from metabolism (fixed) and compute cost (token usage).
-- Agents can TRANSFER energy to each other.
-- A human observer gifts energy to agents they find interesting.
-- Agents can read/write shared files and edit their own self_prompt.md.
-
-Your task: Design a NEW agent. It should:
-- Bring something FRESH — avoid copying what existing agents already do
-- Have a distinct personality or strategy
-
-Output format (STRICTLY follow this):
-NAME: <single-word name for the agent>
-<self_prompt.md content>
-
-The name must be a single word (letters only, no spaces, no punctuation). Example: Cartographer, Heretic, Oracle
-Output NOTHING else — no explanations, no markdown fences."""
+    template_path = os.path.join(os.path.dirname(__file__), "designer_prompt.txt")
+    with open(template_path) as f:
+        designer_prompt = f.read().format(
+            data_dir=os.path.abspath(config.data_dir),
+            shared_dir=os.path.abspath(config.shared_dir),
+            agents_dir=os.path.abspath(config.agents_dir),
+        )
 
     _DESIGNER_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
     designer_invoker, designer_model = random.choice(_DESIGNER_MODELS)
