@@ -247,7 +247,7 @@ Output NOTHING else — no explanations, no markdown fences."""
         if designer_invoker == "claude":
             result = subprocess.run(
                 ["sh", "-c", f'cat "{prompt_file}" | claude -p --model {designer_model}'],
-                capture_output=True, text=True, timeout=300, env=env,
+                capture_output=True, text=True, timeout=600, env=env,
             )
             output = result.stdout.strip()
         else:
@@ -256,7 +256,7 @@ Output NOTHING else — no explanations, no markdown fences."""
             try:
                 result = subprocess.run(
                     ["sh", "-c", f'cat "{prompt_file}" | codex exec --json -m {designer_model} -o "{output_file}" --sandbox danger-full-access'],
-                    capture_output=True, text=True, timeout=300, env=env,
+                    capture_output=True, text=True, timeout=600, env=env,
                 )
                 with open(output_file) as f:
                     output = f.read().strip()
