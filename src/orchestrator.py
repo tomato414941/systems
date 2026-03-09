@@ -168,10 +168,22 @@ def _spontaneous_spawn(
     return [event]
 
 
-def _design_self_prompt(world: WorldState, config: SimulationConfig) -> str | None:
-    """Call an external AI to design a self_prompt for a new agent."""
+def _parse_designed_output(output: str) -> tuple[str | None, str | None]:
+    """Parse 'NAME: <name>\\n<prompt>' format from designer AI output."""
+    import re
+    match = re.match(r"^NAME:\s*(\w+)\s*\n", output)
+    if match:
+        name = match.group(1)
+        prompt = output[match.end():].strip()
+        return name, prompt or None
+    # Fallback: no name found, use entire output as prompt
+    return None, output.strip() or None
+
+
+def _design_self_prompt(world: WorldState, config: SimulationConfig) -> tuple[str | None, str | None]:
+    """Call an external AI to design a self_prompt for a new agent. Returns (name, prompt)."""
     if config.dry_run:
-        return "I am a designed agent. I will explore and experiment."
+        return "Designed", "I am a designed agent. I will explore and experiment."
 
     alive = [a for a in world.agents if a.alive]
     agent_lines = "\n".join(
@@ -211,11 +223,16 @@ Rules of this world:
 - A human observer gifts energy to agents they find interesting.
 - Agents can read/write shared files and edit their own self_prompt.md.
 
-Your task: Write a self_prompt.md for a NEW agent. It should:
+Your task: Design a NEW agent. It should:
 - Bring something FRESH — avoid copying what existing agents already do
-- Give the agent a distinct personality or strategy
+- Have a distinct personality or strategy
 
-Output ONLY the self_prompt.md content. No explanations, no markdown fences."""
+Output format (STRICTLY follow this):
+NAME: <single-word name for the agent>
+<self_prompt.md content>
+
+The name must be a single word (letters only, no spaces, no punctuation). Example: Cartographer, Heretic, Oracle
+Output NOTHING else — no explanations, no markdown fences."""
 
     _DESIGNER_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
     designer_invoker, designer_model = random.choice(_DESIGNER_MODELS)
@@ -250,12 +267,12 @@ Output ONLY the self_prompt.md content. No explanations, no markdown fences."""
                     pass
 
         if output and result.returncode == 0:
-            return output
+            return _parse_designed_output(output)
         print(f"  [design] AI prompt generation failed: {result.stderr[:200]}")
-        return None
+        return None, None
     except Exception as e:
         print(f"  [design] AI prompt generation error: {e}")
-        return None
+        return None, None
     finally:
         try:
             os.unlink(prompt_file)
@@ -271,12 +288,24 @@ def _designed_spawn(
     _TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
     invoker, model = random.choice(_TOP_MODELS)
 
-    designed_prompt = _design_self_prompt(world, config)
+    designed_name, designed_prompt = _design_self_prompt(world, config)
 
     child = _create_agent(
         world, config, invoker, model,
         authorized_prompts, designed_prompt,
     )
+
+    # Override name if designer provided one
+    if designed_name:
+        old_name = child.name.lower()
+        child.name = designed_name
+        new_name = child.name.lower()
+        # Move directory and update authorized_prompts key
+        old_dir = os.path.join(config.agents_dir, old_name)
+        new_dir = os.path.join(config.agents_dir, new_name)
+        if os.path.exists(old_dir) and not os.path.exists(new_dir):
+            os.rename(old_dir, new_dir)
+        authorized_prompts[new_name] = authorized_prompts.pop(old_name, None)
 
     event = WorldEvent(
         round=world.round,
