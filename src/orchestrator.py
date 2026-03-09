@@ -211,10 +211,9 @@ Rules of this world:
 - A human observer gifts energy to agents they find interesting.
 - Agents can read/write shared files and edit their own self_prompt.md.
 
-Your task: Write a self_prompt.md (max 150 words) for a NEW agent. It should:
+Your task: Write a self_prompt.md for a NEW agent. It should:
 - Bring something FRESH — avoid copying what existing agents already do
 - Give the agent a distinct personality or strategy
-- Be concise (the agent pays energy per token it processes)
 
 Output ONLY the self_prompt.md content. No explanations, no markdown fences."""
 
