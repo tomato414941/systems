@@ -76,7 +76,8 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
         save_turns(turns, config.data_dir)
         authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
         deploy_self_prompts(authorized_prompts, config.agents_dir)
-        save_world(world, config.data_dir)
+        if not config.dry_run:
+            save_world(world, config.data_dir)
         alive = get_alive_agents(world)
         print(f"\n=== Round {world.round} ({len(alive)} alive) ===", flush=True)
     else:
@@ -109,7 +110,8 @@ def _finalize_round(
             for event in design_events:
                 log_event(event)
 
-    save_world(world, config.data_dir)
+    if not config.dry_run:
+        save_world(world, config.data_dir)
 
     delete_turns(config.data_dir)
 
@@ -163,7 +165,8 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     if not turns.pending:
         turns.phase = "finalize"
     save_turns(turns, config.data_dir)
-    save_world(world, config.data_dir)
+    if not config.dry_run:
+        save_world(world, config.data_dir)
 
     print(f"  [{agent.name}] E={energy_before:.2f} -> {agent.energy:.2f}")
 
@@ -254,7 +257,8 @@ def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int 
     print(f"DryRun: {config.dry_run}")
     print()
 
-    save_world(world, config.data_dir)
+    if not config.dry_run:
+        save_world(world, config.data_dir)
 
     authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
 
