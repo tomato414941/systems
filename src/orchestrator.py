@@ -99,14 +99,15 @@ def _finalize_round(
     for event in death_events:
         log_event(event)
 
-    respawn_events = spontaneous_spawn(world, config, authorized_prompts)
-    for event in respawn_events:
-        log_event(event)
-
-    for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
-        design_events = designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
-        for event in design_events:
+    if not config.dry_run:
+        respawn_events = spontaneous_spawn(world, config, authorized_prompts)
+        for event in respawn_events:
             log_event(event)
+
+        for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
+            design_events = designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
+            for event in design_events:
+                log_event(event)
 
     save_world(world, config.data_dir)
 
