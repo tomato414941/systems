@@ -59,13 +59,14 @@ def create_agent(
     invoker: str, model: str,
     authorized_prompts: dict[str, str | None],
     self_prompt_content: str | None,
+    energy: float | None = None,
 ) -> AgentState:
     """Create a new agent: state, directory, symlink, self_prompt, and activate."""
     new_index = len(world.agents)
     agent = AgentState(
         id=f"agent-{new_index}",
         name=get_agent_name(new_index),
-        energy=config.initial_energy,
+        energy=energy if energy is not None else config.initial_energy,
         alive=True,
         age=0,
         invoker=invoker,
@@ -218,6 +219,7 @@ def designed_spawn(
     child = create_agent(
         world, config, invoker, model,
         authorized_prompts, designed_prompt,
+        energy=10,
     )
 
     if designed_name:
