@@ -15,7 +15,6 @@ def audit_agent(
     """Scan a single agent's stream log for suspicious actions."""
     stream_dir = os.path.join(logs_dir, "streams")
     candidates = [
-        os.path.join(stream_dir, f"r{round_num}-{agent.name.lower()}.jsonl"),
         os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl"),
     ]
     stream_file = None
@@ -124,7 +123,7 @@ def _check_rules(
     agents_dir: str,
 ) -> list[dict]:
     findings: list[dict] = []
-    agent_dir_prefix = os.path.join(agents_dir, agent.name.lower())
+    agent_dir_prefix = os.path.join(agents_dir, agent.id)
 
     for action in actions:
         kind = action["kind"]

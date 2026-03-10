@@ -31,7 +31,7 @@ def invoke_agent(
     if dry_run:
         return _dry_run_response(agent)
 
-    agent_dir = os.path.join(agents_dir, agent.name.lower())
+    agent_dir = os.path.join(agents_dir, agent.id)
     os.makedirs(agent_dir, exist_ok=True)
     prompt = build_full_prompt(agent, world, shared_dir, agent_dir)
 
@@ -46,7 +46,7 @@ def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, log
     fd, prompt_file = tempfile.mkstemp(prefix=f"systems-prompt-{agent.id}-", suffix=".txt")
     stream_dir = os.path.join(logs_dir, "streams")
     os.makedirs(stream_dir, exist_ok=True)
-    stream_file = os.path.join(stream_dir, f"r{round_num}-{agent.name.lower()}.jsonl")
+    stream_file = os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl")
     try:
         os.write(fd, prompt.encode())
         os.close(fd)
@@ -85,7 +85,7 @@ def _invoke_codex(prompt: str, agent: AgentState, model: str, timeout: int, logs
     os.close(fd2)
     stream_dir = os.path.join(logs_dir, "streams")
     os.makedirs(stream_dir, exist_ok=True)
-    stream_file = os.path.join(stream_dir, f"r{round_num}-{agent.name.lower()}.jsonl")
+    stream_file = os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl")
     try:
         os.write(fd, prompt.encode())
         os.close(fd)

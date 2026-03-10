@@ -18,18 +18,18 @@ from .logger import log_event
 def snapshot_self_prompts(agents: list[AgentState], agents_dir: str) -> dict[str, str | None]:
     snap: dict[str, str | None] = {}
     for a in agents:
-        path = os.path.join(agents_dir, a.name.lower(), SELF_PROMPT_FILE)
+        path = os.path.join(agents_dir, a.id, SELF_PROMPT_FILE)
         if os.path.exists(path):
             with open(path) as f:
-                snap[a.name.lower()] = f.read()
+                snap[a.id] = f.read()
         else:
-            snap[a.name.lower()] = None
+            snap[a.id] = None
     return snap
 
 
 def deploy_self_prompts(authorized: dict[str, str | None], agents_dir: str) -> None:
-    for name, content in authorized.items():
-        path = os.path.join(agents_dir, name, SELF_PROMPT_FILE)
+    for agent_id, content in authorized.items():
+        path = os.path.join(agents_dir, agent_id, SELF_PROMPT_FILE)
         if content is None:
             if os.path.exists(path):
                 os.unlink(path)
@@ -42,13 +42,12 @@ def update_agent_prompt(
     agent: AgentState, agents_dir: str,
     authorized_prompts: dict[str, str | None],
 ) -> None:
-    name = agent.name.lower()
-    path = os.path.join(agents_dir, name, SELF_PROMPT_FILE)
+    path = os.path.join(agents_dir, agent.id, SELF_PROMPT_FILE)
     if os.path.exists(path):
         with open(path) as f:
-            authorized_prompts[name] = f.read()
+            authorized_prompts[agent.id] = f.read()
     else:
-        authorized_prompts[name] = None
+        authorized_prompts[agent.id] = None
 
 
 # ---------------------------------------------------------------------------
@@ -74,15 +73,14 @@ def create_agent(
     )
     world.agents.append(agent)
 
-    agent_dir = os.path.join(config.agents_dir, agent.name.lower())
+    agent_dir = os.path.join(config.agents_dir, agent.id)
     os.makedirs(agent_dir, exist_ok=True)
     shared_abs = os.path.abspath(config.shared_dir)
     link = os.path.join(agent_dir, "shared")
     if not os.path.exists(link):
         os.symlink(shared_abs, link)
 
-    name_lower = agent.name.lower()
-    authorized_prompts[name_lower] = self_prompt_content
+    authorized_prompts[agent.id] = self_prompt_content
     prompt_path = os.path.join(agent_dir, SELF_PROMPT_FILE)
     if self_prompt_content:
         with open(prompt_path, "w") as f:
@@ -106,7 +104,7 @@ def spontaneous_spawn(
         return []
 
     parent = random.choice(alive)
-    parent_prompt = authorized_prompts.get(parent.name.lower())
+    parent_prompt = authorized_prompts.get(parent.id)
 
     child = create_agent(
         world, config, parent.invoker, parent.model,
@@ -223,14 +221,7 @@ def designed_spawn(
     )
 
     if designed_name:
-        old_name = child.name.lower()
         child.name = designed_name
-        new_name = child.name.lower()
-        old_dir = os.path.join(config.agents_dir, old_name)
-        new_dir = os.path.join(config.agents_dir, new_name)
-        if os.path.exists(old_dir) and not os.path.exists(new_dir):
-            os.rename(old_dir, new_dir)
-        authorized_prompts[new_name] = authorized_prompts.pop(old_name, None)
 
     event = WorldEvent(
         round=world.round,

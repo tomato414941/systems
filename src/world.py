@@ -27,7 +27,7 @@ def create_world(config: SimulationConfig) -> WorldState:
     shared_abs = os.path.abspath(config.shared_dir)
     os.makedirs(shared_abs, exist_ok=True)
     for agent in agents:
-        agent_dir = os.path.join(config.agents_dir, agent.name.lower())
+        agent_dir = os.path.join(config.agents_dir, agent.id)
         os.makedirs(agent_dir, exist_ok=True)
         link = os.path.join(agent_dir, "shared")
         if not os.path.exists(link):
