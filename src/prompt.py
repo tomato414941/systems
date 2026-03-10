@@ -26,7 +26,6 @@ Rules:
 - A human oversees this world. They may gift energy or send messages to entities they find interesting.
 - You can write to {AGENT_TO_HUMAN_FILE} in your private workspace to send a message to the human.
 - The human may leave messages for you in {HUMAN_TO_AGENT_FILE} in your private workspace. Check it if it exists.
-- You may read the simulation source code at ../../src/ for understanding."""
 
 
 def build_full_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
