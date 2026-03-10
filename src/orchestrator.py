@@ -1,19 +1,17 @@
-import json
 import os
-import random
-import subprocess
-import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
-from .config import get_agent_name, random_invoker_model
 from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
-from .prompt import SELF_PROMPT_FILE
 from .audit import audit_agent, audit_round, set_agent_names
 from .turns import load_turns, save_turns, delete_turns, create_turns
+from .spawner import (
+    snapshot_self_prompts, deploy_self_prompts, update_agent_prompt,
+    spontaneous_spawn, designed_spawn,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -35,44 +33,6 @@ def _invoke_worker(
     cost_str = f", ${result.cost_usd:.3f}" if result.cost_usd > 0 else ""
     print(f"  [{agent.name}] done ({action}{cost_str})", flush=True)
     return agent, result
-
-
-def _snapshot_self_prompts(agents: list[AgentState], agents_dir: str) -> dict[str, str | None]:
-    snap: dict[str, str | None] = {}
-    for a in agents:
-        path = os.path.join(agents_dir, a.name.lower(), SELF_PROMPT_FILE)
-        if os.path.exists(path):
-            with open(path) as f:
-                snap[a.name.lower()] = f.read()
-        else:
-            snap[a.name.lower()] = None
-    return snap
-
-
-def _deploy_self_prompts(authorized: dict[str, str | None], agents_dir: str) -> None:
-    for name, content in authorized.items():
-        path = os.path.join(agents_dir, name, SELF_PROMPT_FILE)
-        if content is None:
-            if os.path.exists(path):
-                os.unlink(path)
-        else:
-            with open(path, "w") as f:
-                f.write(content)
-
-
-def _update_agent_prompt(
-    agent: AgentState, agents_dir: str,
-    authorized_prompts: dict[str, str | None],
-) -> None:
-    name = agent.name.lower()
-    path = os.path.join(agents_dir, name, SELF_PROMPT_FILE)
-    if os.path.exists(path):
-        with open(path) as f:
-            authorized_prompts[name] = f.read()
-    else:
-        authorized_prompts[name] = None
-
-
 
 
 def _process_agent_result(
@@ -102,205 +62,6 @@ def _process_agent_result(
     return round_result
 
 
-def _create_agent(
-    world: WorldState, config: SimulationConfig,
-    invoker: str, model: str,
-    authorized_prompts: dict[str, str | None],
-    self_prompt_content: str | None,
-) -> AgentState:
-    """Create a new agent: state, directory, symlink, self_prompt, and activate."""
-    new_index = len(world.agents)
-    agent = AgentState(
-        id=f"agent-{new_index}",
-        name=get_agent_name(new_index),
-        energy=config.initial_energy,
-        alive=True,
-        age=0,
-        invoker=invoker,
-        model=model,
-    )
-    world.agents.append(agent)
-
-    agent_dir = os.path.join(config.agents_dir, agent.name.lower())
-    os.makedirs(agent_dir, exist_ok=True)
-    shared_abs = os.path.abspath(config.shared_dir)
-    link = os.path.join(agent_dir, "shared")
-    if not os.path.exists(link):
-        os.symlink(shared_abs, link)
-
-    name_lower = agent.name.lower()
-    authorized_prompts[name_lower] = self_prompt_content
-    prompt_path = os.path.join(agent_dir, SELF_PROMPT_FILE)
-    if self_prompt_content:
-        with open(prompt_path, "w") as f:
-            f.write(self_prompt_content)
-    elif os.path.exists(prompt_path):
-        os.unlink(prompt_path)
-
-    return agent
-
-
-def _spontaneous_spawn(
-    world: WorldState, config: SimulationConfig,
-    authorized_prompts: dict[str, str | None],
-) -> list[WorldEvent]:
-    alive = [a for a in world.agents if a.alive]
-    if len(alive) < 2:
-        return []
-
-    parent = random.choice(alive)
-    parent_prompt = authorized_prompts.get(parent.name.lower())
-
-    child = _create_agent(
-        world, config, parent.invoker, parent.model,
-        authorized_prompts, parent_prompt,
-    )
-
-    event = WorldEvent(
-        round=world.round,
-        type="respawn",
-        agent_id=child.id,
-        details={
-            "parent_id": parent.id,
-            "parent_name": parent.name,
-            "invoker": child.invoker,
-        },
-    )
-    print(f"  [spawn] {parent.name} -> {child.name} (new agent, {child.invoker}/{child.model})")
-    return [event]
-
-
-def _parse_designed_output(output: str) -> tuple[str | None, str | None]:
-    """Parse 'NAME: <name>\\n<prompt>' format from designer AI output."""
-    import re
-    match = re.match(r"^NAME:\s*(\w+)\s*\n", output)
-    if match:
-        name = match.group(1)
-        prompt = output[match.end():].strip()
-        return name, prompt or None
-    # Fallback: no name found, use entire output as prompt
-    return None, output.strip() or None
-
-
-def _design_self_prompt(
-    world: WorldState, config: SimulationConfig,
-    designer_invoker: str, designer_model: str,
-) -> tuple[str | None, str | None]:
-    """Call an external AI to design a self_prompt for a new agent. Returns (name, prompt)."""
-    if config.dry_run:
-        return "Designed", "I am a designed agent. I will explore and experiment."
-
-    template_path = os.path.join(os.path.dirname(__file__), "agent_designer_prompt.md")
-    with open(template_path) as f:
-        designer_prompt = f.read().format(
-            data_dir=os.path.abspath(config.data_dir),
-            shared_dir=os.path.abspath(config.shared_dir),
-            agents_dir=os.path.abspath(config.agents_dir),
-        )
-
-    print(f"  [design] generating prompt with {designer_invoker}/{designer_model}...")
-
-    fd, prompt_file = tempfile.mkstemp(prefix="systems-designer-", suffix=".txt")
-    try:
-        os.write(fd, designer_prompt.encode())
-        os.close(fd)
-
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
-        if designer_invoker == "claude":
-            result = subprocess.run(
-                ["sh", "-c", f'cat "{prompt_file}" | claude -p --model {designer_model}'],
-                capture_output=True, text=True, timeout=600, env=env,
-            )
-            output = result.stdout.strip()
-        else:
-            fd2, output_file = tempfile.mkstemp(prefix="systems-designer-out-", suffix=".txt")
-            os.close(fd2)
-            try:
-                result = subprocess.run(
-                    ["sh", "-c", f'cat "{prompt_file}" | codex exec --json -m {designer_model} -o "{output_file}" --sandbox danger-full-access'],
-                    capture_output=True, text=True, timeout=600, env=env,
-                )
-                with open(output_file) as f:
-                    output = f.read().strip()
-            finally:
-                try:
-                    os.unlink(output_file)
-                except OSError:
-                    pass
-
-        if output and result.returncode == 0:
-            return _parse_designed_output(output)
-        print(f"  [design] AI prompt generation failed: {result.stderr[:200]}")
-        return None, None
-    except Exception as e:
-        print(f"  [design] AI prompt generation error: {e}")
-        return None, None
-    finally:
-        try:
-            os.unlink(prompt_file)
-        except OSError:
-            pass
-
-
-def _designed_spawn(
-    world: WorldState, config: SimulationConfig,
-    authorized_prompts: dict[str, str | None],
-    designer_invoker: str, designer_model: str,
-) -> list[WorldEvent]:
-    """Spawn a fresh agent via intelligent design — AI-generated self_prompt, top-tier model."""
-    _TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
-    invoker, model = random.choice(_TOP_MODELS)
-
-    designed_name, designed_prompt = _design_self_prompt(world, config, designer_invoker, designer_model)
-
-    if not designed_prompt:
-        print(f"  [design] skipped — prompt generation failed")
-        return []
-
-    child = _create_agent(
-        world, config, invoker, model,
-        authorized_prompts, designed_prompt,
-    )
-
-    if designed_name:
-        old_name = child.name.lower()
-        child.name = designed_name
-        new_name = child.name.lower()
-        # Move directory and update authorized_prompts key
-        old_dir = os.path.join(config.agents_dir, old_name)
-        new_dir = os.path.join(config.agents_dir, new_name)
-        if os.path.exists(old_dir) and not os.path.exists(new_dir):
-            os.rename(old_dir, new_dir)
-        authorized_prompts[new_name] = authorized_prompts.pop(old_name, None)
-
-    event = WorldEvent(
-        round=world.round,
-        type="designed_spawn",
-        agent_id=child.id,
-        details={
-            "invoker": child.invoker,
-            "model": child.model,
-            "designed_prompt": designed_prompt[:200] if designed_prompt else None,
-        },
-    )
-    prompt_preview = designed_prompt[:60] + "..." if designed_prompt and len(designed_prompt) > 60 else designed_prompt
-    print(f"  [design] -> {child.name} (new agent, {child.invoker}/{child.model})")
-    if prompt_preview:
-        print(f"  [design] prompt: {prompt_preview}")
-    return [event]
-
-
-def run_designed_spawn(world: WorldState, config: SimulationConfig) -> None:
-    """Run designed spawns outside of the normal round lifecycle."""
-    authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
-    for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
-        events = _designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
-        for event in events:
-            log_event(event)
-    _deploy_self_prompts(authorized_prompts, config.agents_dir)
-    save_world(world, config.data_dir)
-
-
 # ---------------------------------------------------------------------------
 # Round lifecycle (turn-based)
 # ---------------------------------------------------------------------------
@@ -313,15 +74,15 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
         world.round += 1
         turns = create_turns(world)
         save_turns(turns, config.data_dir)
-        authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
-        _deploy_self_prompts(authorized_prompts, config.agents_dir)
+        authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
+        deploy_self_prompts(authorized_prompts, config.agents_dir)
         save_world(world, config.data_dir)
         alive = get_alive_agents(world)
         print(f"\n=== Round {world.round} ({len(alive)} alive) ===", flush=True)
     else:
         # Don't reload from disk — use in-memory state to prevent agent tampering.
         # __main__.py already loads world.json at startup.
-        authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
+        authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
 
     return turns, authorized_prompts
 
@@ -338,12 +99,12 @@ def _finalize_round(
     for event in death_events:
         log_event(event)
 
-    respawn_events = _spontaneous_spawn(world, config, authorized_prompts)
+    respawn_events = spontaneous_spawn(world, config, authorized_prompts)
     for event in respawn_events:
         log_event(event)
 
     for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
-        design_events = _designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
+        design_events = designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
         for event in design_events:
             log_event(event)
 
@@ -385,7 +146,7 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     remaining = len(turns.pending) - 1
     print(f"  turn: {agent.name} ({remaining} remaining)")
 
-    _deploy_self_prompts(authorized_prompts, config.agents_dir)
+    deploy_self_prompts(authorized_prompts, config.agents_dir)
 
     energy_before = agent.energy
     _, result = _invoke_worker(
@@ -394,8 +155,8 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     )
 
     _process_agent_result(agent, result, energy_before, world, config)
-    _update_agent_prompt(agent, config.agents_dir, authorized_prompts)
-    _deploy_self_prompts(authorized_prompts, config.agents_dir)
+    update_agent_prompt(agent, config.agents_dir, authorized_prompts)
+    deploy_self_prompts(authorized_prompts, config.agents_dir)
 
     turns.completed.append(next_id)
     if not turns.pending:
@@ -435,7 +196,7 @@ def run_round(
         else:
             turns.completed.append(agent_id)
 
-    _deploy_self_prompts(authorized_prompts, config.agents_dir)
+    deploy_self_prompts(authorized_prompts, config.agents_dir)
 
     # Invoke all with concurrency
     invoke_results: dict[str, tuple[AgentState, InvokeResult, float]] = {}
@@ -462,8 +223,8 @@ def run_round(
 
     # Update authorized prompts
     for a in pending:
-        _update_agent_prompt(a, config.agents_dir, authorized_prompts)
-    _deploy_self_prompts(authorized_prompts, config.agents_dir)
+        update_agent_prompt(a, config.agents_dir, authorized_prompts)
+    deploy_self_prompts(authorized_prompts, config.agents_dir)
 
     # Audit all agents
     set_agent_names(world.agents)
@@ -494,7 +255,7 @@ def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int 
 
     save_world(world, config.data_dir)
 
-    authorized_prompts = _snapshot_self_prompts(world.agents, config.agents_dir)
+    authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
 
     rounds_done = 0
     while True:

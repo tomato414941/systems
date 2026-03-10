@@ -6,7 +6,8 @@ from .config import DEFAULT_CONFIG
 from .world import create_world, load_world, save_world, find_agent
 from .physics import apply_gift
 from .logger import init_logger, log_event
-from .orchestrator import run_simulation, run_turn, run_designed_spawn
+from .orchestrator import run_simulation, run_turn
+from .spawner import run_designed_spawn
 
 
 def _handle_gift(args) -> None:
