@@ -36,7 +36,6 @@ def build_full_prompt(agent: AgentState, world: WorldState, shared_dir: str, age
     if os.path.exists(human_msg_path):
         with open(human_msg_path) as f:
             human_msg = f.read().strip()
-        os.unlink(human_msg_path)
 
     self_prompt_path = os.path.join(agent_dir, SELF_PROMPT_FILE)
     self_prompt = ""
