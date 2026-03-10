@@ -25,7 +25,7 @@ Rules:
 - Every round, one entity spontaneously reproduces: a random survivor's mind (invoker and self_prompt.md) is copied into a new entity. Population can grow. But resources are finite — when energy runs out, you die.
 - A human oversees this world. They may gift energy or send messages to entities they find interesting.
 - You can write to {AGENT_TO_HUMAN_FILE} in your private workspace to send a message to the human.
-- The human may leave messages for you in {HUMAN_TO_AGENT_FILE} in your private workspace. Check it if it exists.
+- The human may leave messages for you in {HUMAN_TO_AGENT_FILE} in your private workspace. Check it if it exists."""
 
 
 def build_full_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
