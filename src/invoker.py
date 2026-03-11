@@ -43,6 +43,12 @@ def invoke_agent(
 
 
 
+def _clear_transfer_file(agent_dir: str) -> None:
+    path = os.path.join(agent_dir, TRANSFER_FILE)
+    if os.path.exists(path):
+        os.unlink(path)
+
+
 def _read_transfer_file(agent_dir: str) -> TransferRequest | None:
     """Read and parse transfer.txt from agent workspace."""
     path = os.path.join(agent_dir, TRANSFER_FILE)
@@ -64,6 +70,7 @@ def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, log
     stream_dir = os.path.join(logs_dir, "streams")
     os.makedirs(stream_dir, exist_ok=True)
     stream_file = os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl")
+    _clear_transfer_file(cwd)
     try:
         os.write(fd, prompt.encode())
         os.close(fd)
@@ -104,6 +111,7 @@ def _invoke_codex(prompt: str, agent: AgentState, model: str, timeout: int, logs
     stream_dir = os.path.join(logs_dir, "streams")
     os.makedirs(stream_dir, exist_ok=True)
     stream_file = os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl")
+    _clear_transfer_file(cwd)
     try:
         os.write(fd, prompt.encode())
         os.close(fd)
