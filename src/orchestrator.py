@@ -12,6 +12,7 @@ from .spawner import (
     snapshot_self_prompts, deploy_self_prompts, update_agent_prompt,
     spontaneous_spawn, designed_spawn,
 )
+from .evaluator import evaluate_round
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +96,11 @@ def _finalize_round(
     reward_events = random_energy_reward(world, config.energy_reward_count, config.energy_reward_amount)
     for event in reward_events:
         log_event(event)
+
+    if not config.dry_run:
+        eval_events = evaluate_round(world, config)
+        for event in eval_events:
+            log_event(event)
 
     death_events = check_deaths(world)
     for event in death_events:
