@@ -67,9 +67,10 @@ def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, log
 
         # Extract text and cost from stream
         raw = _extract_text_from_claude_stream(result.stdout)
+        last_text = _extract_last_text_from_claude_stream(result.stdout)
         cost_usd = _extract_cost_from_claude_stream(result.stdout)
 
-        return InvokeResult(transfer=parse_transfer(raw), raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
+        return InvokeResult(transfer=parse_transfer(last_text), raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
     except Exception as err:
         return _handle_error(err, agent)
     finally:
@@ -140,6 +141,23 @@ def _extract_text_from_claude_stream(jsonl: str) -> str:
             continue
     return "\n".join(parts) if parts else jsonl
 
+
+
+def _extract_last_text_from_claude_stream(jsonl: str) -> str:
+    """Extract only the last text block from Claude stream for action parsing."""
+    last_text = ""
+    for line in jsonl.splitlines():
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+            if obj.get("type") == "assistant" and "message" in obj:
+                for block in obj["message"].get("content", []):
+                    if block.get("type") == "text" and block.get("text", "").strip():
+                        last_text = block["text"]
+        except json.JSONDecodeError:
+            continue
+    return last_text
 
 def _extract_cost_from_claude_stream(jsonl: str) -> float:
     for line in jsonl.splitlines():
