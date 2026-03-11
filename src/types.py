@@ -18,7 +18,7 @@ class AgentState:
 @dataclass
 class TransferRequest:
     to: str
-    amount: int
+    amount: float
 
 
 @dataclass
