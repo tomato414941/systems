@@ -10,13 +10,14 @@ from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
 
 
 class InvokeResult:
-    __slots__ = ("transfer", "raw_output", "stream_file", "cost_usd")
+    __slots__ = ("transfer", "raw_output", "stream_file", "cost_usd", "failed")
 
-    def __init__(self, transfer: TransferRequest | None, raw_output: str, stream_file: str = "", cost_usd: float = 0.0) -> None:
+    def __init__(self, transfer: TransferRequest | None, raw_output: str, stream_file: str = "", cost_usd: float = 0.0, failed: bool = False) -> None:
         self.transfer = transfer
         self.raw_output = raw_output
         self.stream_file = stream_file
         self.cost_usd = cost_usd
+        self.failed = failed
 
 
 def invoke_agent(
@@ -89,6 +90,10 @@ def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, log
         with open(stream_file, "w") as f:
             f.write(result.stdout)
 
+        if result.returncode != 0:
+            print(f"  [{agent.name}] claude exited with code {result.returncode}: {result.stderr[:200]}")
+            return InvokeResult(transfer=None, raw_output=result.stderr[:500], stream_file=stream_file, failed=True)
+
         # Extract text and cost from stream
         raw = _extract_text_from_claude_stream(result.stdout)
         cost_usd = _extract_cost_from_claude_stream(result.stdout)
@@ -129,6 +134,10 @@ def _invoke_codex(prompt: str, agent: AgentState, model: str, timeout: int, logs
         # Save raw JSONL stream
         with open(stream_file, "w") as f:
             f.write(result.stdout)
+
+        if result.returncode != 0:
+            print(f"  [{agent.name}] codex exited with code {result.returncode}: {result.stderr[:200]}")
+            return InvokeResult(transfer=None, raw_output=result.stderr[:500], stream_file=stream_file, failed=True)
 
         with open(output_file) as f:
             raw = f.read()
@@ -234,7 +243,7 @@ def parse_transfer(raw: str) -> TransferRequest | None:
 def _handle_error(err: Exception, agent: AgentState) -> InvokeResult:
     message = str(err)[:200]
     print(f"  [{agent.name}] invocation error: {message}")
-    return InvokeResult(transfer=None, raw_output=f"ERROR: {str(err)[:500]}")
+    return InvokeResult(transfer=None, raw_output=f"ERROR: {str(err)[:500]}", failed=True)
 
 
 _DRY_RUN_ACTIONS = [

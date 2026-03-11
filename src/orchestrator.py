@@ -30,9 +30,12 @@ def _invoke_worker(
 ) -> tuple[AgentState, InvokeResult]:
     print(f"  [{agent.name}] invoking ({agent.invoker}/{agent.model})...", flush=True)
     result = invoke_agent(agent, world, shared_dir, agents_dir, timeout, dry_run, logs_dir)
-    action = f"TRANSFER {result.transfer.amount} TO {result.transfer.to}" if result.transfer else "no transfer"
-    cost_str = f", ${result.cost_usd:.3f}" if result.cost_usd > 0 else ""
-    print(f"  [{agent.name}] done ({action}{cost_str})", flush=True)
+    if result.failed:
+        print(f"  [{agent.name}] FAILED", flush=True)
+    else:
+        action = f"TRANSFER {result.transfer.amount} TO {result.transfer.to}" if result.transfer else "no transfer"
+        cost_str = f", ${result.cost_usd:.3f}" if result.cost_usd > 0 else ""
+        print(f"  [{agent.name}] done ({action}{cost_str})", flush=True)
     return agent, result
 
 
