@@ -130,17 +130,6 @@ def spontaneous_spawn(
 # Designed spawn
 # ---------------------------------------------------------------------------
 
-def _parse_designed_output(output: str) -> tuple[str | None, str | None]:
-    """Parse 'NAME: <name>\\n<prompt>' format from designer AI output."""
-    import re
-    match = re.match(r"^NAME:\s*(\w+)\s*\n", output)
-    if match:
-        name = match.group(1)
-        prompt = output[match.end():].strip()
-        return name, prompt or None
-    return None, output.strip() or None
-
-
 def _design_self_prompt(
     world: WorldState, config: SimulationConfig,
     designer_invoker: str, designer_model: str,
@@ -149,18 +138,20 @@ def _design_self_prompt(
     if config.dry_run:
         return "Designed", "I am a designed agent. I will explore and experiment."
 
-    template_path = os.path.join(os.path.dirname(__file__), "agent_designer_prompt.md")
-    with open(template_path) as f:
-        designer_prompt = f.read().format(
-            data_dir=os.path.abspath(config.data_dir),
-            shared_dir=os.path.abspath(config.shared_dir),
-            agents_dir=os.path.abspath(config.agents_dir),
-        )
-
-    print(f"  [design] generating prompt with {designer_invoker}/{designer_model}...")
-
-    fd, prompt_file = tempfile.mkstemp(prefix="systems-designer-", suffix=".txt")
+    output_dir = tempfile.mkdtemp(prefix="systems-designer-")
     try:
+        template_path = os.path.join(os.path.dirname(__file__), "agent_designer_prompt.md")
+        with open(template_path) as f:
+            designer_prompt = f.read().format(
+                data_dir=os.path.abspath(config.data_dir),
+                shared_dir=os.path.abspath(config.shared_dir),
+                agents_dir=os.path.abspath(config.agents_dir),
+                output_dir=output_dir,
+            )
+
+        print(f"  [design] generating prompt with {designer_invoker}/{designer_model}...")
+
+        fd, prompt_file = tempfile.mkstemp(prefix="systems-designer-", suffix=".txt")
         os.write(fd, designer_prompt.encode())
         os.close(fd)
 
@@ -170,35 +161,40 @@ def _design_self_prompt(
                 ["sh", "-c", f'cat "{prompt_file}" | claude -p --model {designer_model}'],
                 capture_output=True, text=True, timeout=600, env=env,
             )
-            output = result.stdout.strip()
         else:
-            fd2, output_file = tempfile.mkstemp(prefix="systems-designer-out-", suffix=".txt")
-            os.close(fd2)
-            try:
-                result = subprocess.run(
-                    ["sh", "-c", f'cat "{prompt_file}" | codex exec --json -m {designer_model} -o "{output_file}" --sandbox danger-full-access'],
-                    capture_output=True, text=True, timeout=600, env=env,
-                )
-                with open(output_file) as f:
-                    output = f.read().strip()
-            finally:
-                try:
-                    os.unlink(output_file)
-                except OSError:
-                    pass
+            result = subprocess.run(
+                ["sh", "-c", f'cat "{prompt_file}" | codex exec --json -m {designer_model} --sandbox danger-full-access'],
+                capture_output=True, text=True, timeout=600, env=env,
+            )
 
-        if output and result.returncode == 0:
-            return _parse_designed_output(output)
-        print(f"  [design] AI prompt generation failed: {result.stderr[:200]}")
-        return None, None
+        os.unlink(prompt_file)
+
+        if result.returncode != 0:
+            print(f"  [design] AI prompt generation failed: {result.stderr[:200]}")
+            return None, None
+
+        # Read files written by designer AI
+        name = None
+        prompt = None
+        name_path = os.path.join(output_dir, "name.txt")
+        prompt_path = os.path.join(output_dir, "self_prompt.md")
+
+        if os.path.exists(name_path):
+            with open(name_path) as f:
+                name = f.read().strip() or None
+        if os.path.exists(prompt_path):
+            with open(prompt_path) as f:
+                prompt = f.read().strip() or None
+
+        if not prompt:
+            print(f"  [design] designer did not write self_prompt.md")
+        return name, prompt
     except Exception as e:
         print(f"  [design] AI prompt generation error: {e}")
         return None, None
     finally:
-        try:
-            os.unlink(prompt_file)
-        except OSError:
-            pass
+        import shutil
+        shutil.rmtree(output_dir, ignore_errors=True)
 
 
 def designed_spawn(

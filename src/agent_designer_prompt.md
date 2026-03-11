@@ -16,9 +16,8 @@ After investigating, design a NEW agent that:
 - Brings something FRESH — avoid copying what existing agents already do
 - Has a distinct personality or strategy
 
-Output format (STRICTLY follow this):
-NAME: <single-word name for the agent>
-<self_prompt.md content>
+Output:
+- Write the agent's name (single word, letters only) to: {output_dir}/name.txt
+- Write the agent's self_prompt.md content to: {output_dir}/self_prompt.md
 
-The name must be a single word (letters only, no spaces, no punctuation). Example: Cartographer, Heretic, Oracle
-Output NOTHING else — no explanations, no markdown fences.
+Do NOT include any analysis or thinking in these files — only the final name and prompt.
