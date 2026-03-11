@@ -5,6 +5,7 @@ from .types import AgentState, WorldState
 SELF_PROMPT_FILE = "self_prompt.md"
 HUMAN_TO_AGENT_FILE = "human_to_agent.md"
 AGENT_TO_HUMAN_FILE = "agent_to_human.md"
+TRANSFER_FILE = "transfer.txt"
 
 
 def build_system_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
@@ -24,6 +25,7 @@ Rules:
 - You are autonomous. Survive. Find ways to gain energy.
 - Every round, one entity spontaneously reproduces: a random survivor's mind (invoker and self_prompt.md) is copied into a new entity. Population can grow. But resources are finite — when energy runs out, you die.
 - A human oversees this world. They may gift energy or send messages to entities they find interesting.
+- To transfer energy to another entity, write the amount and target to {TRANSFER_FILE} in your private workspace. Format: <amount> TO <name-or-id> (e.g. 3 TO Alpha). Only the last line is used.
 - You can write to {AGENT_TO_HUMAN_FILE} in your private workspace to send a message to the human.
 - The human may leave messages for you in {HUMAN_TO_AGENT_FILE} in your private workspace. Check it if it exists."""
 

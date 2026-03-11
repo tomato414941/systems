@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 from .types import AgentState, TransferRequest, WorldState
-from .prompt import build_full_prompt
+from .prompt import build_full_prompt, TRANSFER_FILE
 from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
 
 
@@ -42,6 +42,23 @@ def invoke_agent(
     return _invoke_claude(prompt, agent, model, timeout, logs_dir, world.round, agent_abs)
 
 
+
+def _read_transfer_file(agent_dir: str) -> TransferRequest | None:
+    """Read and parse transfer.txt from agent workspace."""
+    path = os.path.join(agent_dir, TRANSFER_FILE)
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        text = f.read().strip()
+    os.unlink(path)
+    if not text:
+        return None
+    # Parse last non-empty line
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        return None
+    return parse_transfer("TRANSFER " + lines[-1])
+
 def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
     fd, prompt_file = tempfile.mkstemp(prefix=f"systems-prompt-{agent.id}-", suffix=".txt")
     stream_dir = os.path.join(logs_dir, "streams")
@@ -67,10 +84,10 @@ def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, log
 
         # Extract text and cost from stream
         raw = _extract_text_from_claude_stream(result.stdout)
-        last_text = _extract_last_text_from_claude_stream(result.stdout)
         cost_usd = _extract_cost_from_claude_stream(result.stdout)
+        transfer = _read_transfer_file(cwd)
 
-        return InvokeResult(transfer=parse_transfer(last_text), raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
+        return InvokeResult(transfer=transfer, raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
     except Exception as err:
         return _handle_error(err, agent)
     finally:
@@ -109,8 +126,9 @@ def _invoke_codex(prompt: str, agent: AgentState, model: str, timeout: int, logs
             raw = f.read()
 
         cost_usd = _extract_cost_from_codex_stream(result.stdout, model)
+        transfer = _read_transfer_file(cwd)
 
-        return InvokeResult(transfer=parse_transfer(raw), raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
+        return InvokeResult(transfer=transfer, raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
     except Exception as err:
         return _handle_error(err, agent)
     finally:
