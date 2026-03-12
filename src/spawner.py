@@ -126,6 +126,7 @@ def spontaneous_spawn(
     child = create_agent(
         world, config, parent.invoker, parent.model,
         authorized_prompts, parent_prompt,
+        energy=config.spontaneous_spawn_energy,
     )
     child.name = _derive_child_name(parent.name, world.agents[:-1])
 

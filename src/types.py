@@ -63,4 +63,5 @@ class SimulationConfig:
     base_metabolism: float = 1.0
     claude_model: str = "sonnet"
     codex_model: str = "gpt-5.3-codex"
+    spontaneous_spawn_energy: float = 10.0
     designed_spawn_energy: float = 16.0
