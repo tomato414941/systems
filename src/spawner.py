@@ -232,7 +232,7 @@ def designed_spawn(
     child = create_agent(
         world, config, invoker, model,
         authorized_prompts, designed_prompt,
-        energy=10,
+        energy=config.designed_spawn_energy,
     )
 
     if designed_name:
