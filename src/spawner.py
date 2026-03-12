@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import re
 import subprocess
 import tempfile
 
@@ -96,6 +97,21 @@ def create_agent(
 # Spontaneous spawn
 # ---------------------------------------------------------------------------
 
+def _derive_child_name(parent_name: str, agents: list[AgentState]) -> str:
+    """Generate child name from parent: Alpha -> Alpha-2, Alpha-2 -> Alpha-3, etc."""
+    # Extract base name (strip existing generation suffix)
+    base = re.sub(r"-\d+$", "", parent_name)
+    # Count existing children with same base
+    gen = 2
+    for a in agents:
+        stripped = re.sub(r"-\d+$", "", a.name)
+        if stripped == base and a.name != base:
+            m = re.search(r"-(\d+)$", a.name)
+            if m:
+                gen = max(gen, int(m.group(1)) + 1)
+    return f"{base}-{gen}"
+
+
 def spontaneous_spawn(
     world: WorldState, config: SimulationConfig,
     authorized_prompts: dict[str, str | None],
@@ -111,6 +127,7 @@ def spontaneous_spawn(
         world, config, parent.invoker, parent.model,
         authorized_prompts, parent_prompt,
     )
+    child.name = _derive_child_name(parent.name, world.agents[:-1])
 
     event = WorldEvent(
         round=world.round,
