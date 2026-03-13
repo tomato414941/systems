@@ -47,109 +47,196 @@ def invoke_agent(
     return _invoke_claude(prompt, agent, model, timeout, logs_dir, world.round, agent_abs)
 
 
-
-SEND_PATTERN = re.compile(
-    r'^\s*SEND\s+"([^"]{1,500})"\s+TO\s+([\w-]+)\s*$',
-    re.IGNORECASE | re.MULTILINE,
-)
-PUBLISH_PATTERN = re.compile(
-    r'^\s*PUBLISH\s+SERVICE\s+([\w-]+)\s+SCRIPT\s+([\w/.]+)\s+PRICE\s+([\d.]+)\s+DESC\s+"([^"]{1,200})"\s*$',
-    re.IGNORECASE | re.MULTILINE,
-)
-USE_PATTERN = re.compile(
-    r'^\s*USE\s+SERVICE\s+([\w-]+)\s+INPUT\s+"([^"]{1,500})"\s*$',
-    re.IGNORECASE | re.MULTILINE,
-)
-UNPUBLISH_PATTERN = re.compile(
-    r'^\s*UNPUBLISH\s+SERVICE\s+([\w-]+)\s*$',
-    re.IGNORECASE | re.MULTILINE,
-)
-UPDATE_PATTERN = re.compile(
-    r'^\s*UPDATE\s+SERVICE\s+([\w-]+)\s+PRICE\s+([\d.]+)\s*$',
-    re.IGNORECASE | re.MULTILINE,
-)
-
 MAX_SENDS_PER_TURN = 3
 MAX_USES_PER_TURN = 3
 MAX_PUBLISHES_PER_TURN = 2
 
 
 def _clear_command_files(agent_dir: str) -> None:
-    for fname in (COMMANDS_FILE, "transfer.txt"):
+    for fname in (COMMANDS_FILE, "commands.txt", "transfer.txt"):
         path = os.path.join(agent_dir, fname)
         if os.path.exists(path):
             os.unlink(path)
 
 
 def _read_commands_file(agent_dir: str) -> AgentCommands:
-    """Read and parse commands.txt (or fallback to transfer.txt)."""
+    """Read and parse commands.json (with fallback to legacy text formats)."""
     cmds = AgentCommands()
 
-    # Try commands.txt first, fall back to transfer.txt
     cmd_path = os.path.join(agent_dir, COMMANDS_FILE)
-    legacy_path = os.path.join(agent_dir, "transfer.txt")
+    legacy_txt = os.path.join(agent_dir, "commands.txt")
+    legacy_transfer = os.path.join(agent_dir, "transfer.txt")
 
     if os.path.exists(cmd_path):
         with open(cmd_path) as f:
-            text = f.read().strip()
+            raw = f.read().strip()
         os.unlink(cmd_path)
-        # Also clean up legacy file if present
-        if os.path.exists(legacy_path):
-            os.unlink(legacy_path)
-    elif os.path.exists(legacy_path):
-        with open(legacy_path) as f:
-            text = f.read().strip()
-        os.unlink(legacy_path)
-        if text:
-            # Legacy format: just "<amount> TO <target>" without TRANSFER prefix
-            lines = [l.strip() for l in text.splitlines() if l.strip()]
+        for p in (legacy_txt, legacy_transfer):
+            if os.path.exists(p):
+                os.unlink(p)
+        if raw:
+            return _parse_json_commands(raw)
+        return cmds
+
+    # Legacy: commands.txt (line-based text format)
+    if os.path.exists(legacy_txt):
+        with open(legacy_txt) as f:
+            raw = f.read().strip()
+        os.unlink(legacy_txt)
+        if os.path.exists(legacy_transfer):
+            os.unlink(legacy_transfer)
+        if raw:
+            return _parse_legacy_commands(raw)
+        return cmds
+
+    # Legacy: transfer.txt
+    if os.path.exists(legacy_transfer):
+        with open(legacy_transfer) as f:
+            raw = f.read().strip()
+        os.unlink(legacy_transfer)
+        if raw:
+            lines = [l.strip() for l in raw.splitlines() if l.strip()]
             if lines:
-                cmds.transfer = parse_transfer("TRANSFER " + lines[-1])
-            return cmds
-    else:
+                cmds.transfer = _parse_legacy_transfer("TRANSFER " + lines[-1])
         return cmds
 
-    if not text:
+    return cmds
+
+
+def _parse_json_commands(raw: str) -> AgentCommands:
+    cmds = AgentCommands()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
         return cmds
 
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        return cmds
+
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        cmd_type = str(entry.get("type", "")).lower()
+
+        if cmd_type == "transfer":
+            try:
+                amount = float(entry["amount"])
+                to = str(entry["to"])
+                if amount > 0 and to:
+                    cmds.transfer = TransferRequest(to=to, amount=amount)
+            except (KeyError, ValueError):
+                pass
+
+        elif cmd_type == "send" and len(cmds.sends) < MAX_SENDS_PER_TURN:
+            try:
+                cmds.sends.append(SendRequest(
+                    to=str(entry["to"]),
+                    message=str(entry["message"])[:500],
+                ))
+            except KeyError:
+                pass
+
+        elif cmd_type == "publish_service" and len(cmds.publish) < MAX_PUBLISHES_PER_TURN:
+            try:
+                cmds.publish.append(PublishServiceRequest(
+                    name=str(entry["name"]),
+                    script=str(entry["script"]),
+                    price=float(entry["price"]),
+                    description=str(entry["description"])[:200],
+                ))
+            except (KeyError, ValueError):
+                pass
+
+        elif cmd_type == "use_service" and len(cmds.use) < MAX_USES_PER_TURN:
+            try:
+                cmds.use.append(UseServiceRequest(
+                    name=str(entry["name"]),
+                    input=str(entry.get("input", "")),
+                ))
+            except KeyError:
+                pass
+
+        elif cmd_type == "update_service":
+            try:
+                cmds.update.append(UpdateServiceRequest(
+                    name=str(entry["name"]),
+                    price=float(entry["price"]),
+                ))
+            except (KeyError, ValueError):
+                pass
+
+        elif cmd_type == "unpublish_service":
+            try:
+                cmds.unpublish.append(UnpublishServiceRequest(name=str(entry["name"])))
+            except KeyError:
+                pass
+
+    return cmds
+
+
+LEGACY_SEND_PATTERN = re.compile(
+    r'^\s*SEND\s+"([^"]{1,500})"\s+TO\s+([\w-]+)\s*$',
+    re.IGNORECASE,
+)
+LEGACY_PUBLISH_PATTERN = re.compile(
+    r'^\s*PUBLISH\s+SERVICE\s+([\w-]+)\s+SCRIPT\s+([\w/.]+)\s+PRICE\s+([\d.]+)\s+DESC\s+"([^"]{1,200})"\s*$',
+    re.IGNORECASE,
+)
+LEGACY_USE_PATTERN = re.compile(
+    r'^\s*USE\s+SERVICE\s+([\w-]+)\s+INPUT\s+"([^"]{1,500})"\s*$',
+    re.IGNORECASE,
+)
+LEGACY_UNPUBLISH_PATTERN = re.compile(
+    r'^\s*UNPUBLISH\s+SERVICE\s+([\w-]+)\s*$',
+    re.IGNORECASE,
+)
+LEGACY_UPDATE_PATTERN = re.compile(
+    r'^\s*UPDATE\s+SERVICE\s+([\w-]+)\s+PRICE\s+([\d.]+)\s*$',
+    re.IGNORECASE,
+)
+
+
+def _parse_legacy_commands(text: str) -> AgentCommands:
+    """Parse legacy commands.txt text format for backward compatibility."""
+    cmds = AgentCommands()
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
 
-        transfer = parse_transfer(line)
+        transfer = _parse_legacy_transfer(line)
         if transfer:
-            cmds.transfer = transfer  # last one wins
+            cmds.transfer = transfer
             continue
 
-        send_match = SEND_PATTERN.match(line)
-        if send_match and len(cmds.sends) < MAX_SENDS_PER_TURN:
-            cmds.sends.append(SendRequest(to=send_match.group(2), message=send_match.group(1)))
+        m = LEGACY_SEND_PATTERN.match(line)
+        if m and len(cmds.sends) < MAX_SENDS_PER_TURN:
+            cmds.sends.append(SendRequest(to=m.group(2), message=m.group(1)))
             continue
 
-        pub_match = PUBLISH_PATTERN.match(line)
-        if pub_match and len(cmds.publish) < MAX_PUBLISHES_PER_TURN:
+        m = LEGACY_PUBLISH_PATTERN.match(line)
+        if m and len(cmds.publish) < MAX_PUBLISHES_PER_TURN:
             cmds.publish.append(PublishServiceRequest(
-                name=pub_match.group(1),
-                script=pub_match.group(2),
-                price=float(pub_match.group(3)),
-                description=pub_match.group(4),
+                name=m.group(1), script=m.group(2),
+                price=float(m.group(3)), description=m.group(4),
             ))
             continue
 
-        use_match = USE_PATTERN.match(line)
-        if use_match and len(cmds.use) < MAX_USES_PER_TURN:
-            cmds.use.append(UseServiceRequest(name=use_match.group(1), input=use_match.group(2)))
+        m = LEGACY_USE_PATTERN.match(line)
+        if m and len(cmds.use) < MAX_USES_PER_TURN:
+            cmds.use.append(UseServiceRequest(name=m.group(1), input=m.group(2)))
             continue
 
-        unpub_match = UNPUBLISH_PATTERN.match(line)
-        if unpub_match:
-            cmds.unpublish.append(UnpublishServiceRequest(name=unpub_match.group(1)))
+        m = LEGACY_UNPUBLISH_PATTERN.match(line)
+        if m:
+            cmds.unpublish.append(UnpublishServiceRequest(name=m.group(1)))
             continue
 
-        update_match = UPDATE_PATTERN.match(line)
-        if update_match:
-            cmds.update.append(UpdateServiceRequest(name=update_match.group(1), price=float(update_match.group(2))))
+        m = LEGACY_UPDATE_PATTERN.match(line)
+        if m:
+            cmds.update.append(UpdateServiceRequest(name=m.group(1), price=float(m.group(2))))
 
     return cmds
 
@@ -312,18 +399,14 @@ def _extract_cost_from_codex_stream(jsonl: str, model: str) -> float:
     return (total_input * input_price + total_output * output_price) / 1_000_000
 
 
-def parse_transfer(raw: str) -> TransferRequest | None:
-    # Only match TRANSFER on its own line to avoid false positives from
-    # analysis text like "if I transfer 5 to agent-9..."
+def _parse_legacy_transfer(raw: str) -> TransferRequest | None:
     match = re.search(r"^\s*TRANSFER\s+([\d.]+)\s+TO\s+([\w-]+)\s*$", raw, re.IGNORECASE | re.MULTILINE)
     if not match:
         return None
-
     amount = float(match.group(1))
     to = match.group(2)
     if amount <= 0 or not to:
         return None
-
     return TransferRequest(to=to, amount=amount)
 
 
@@ -333,20 +416,13 @@ def _handle_error(err: Exception, agent: AgentState) -> InvokeResult:
     return InvokeResult(raw_output=f"ERROR: {str(err)[:500]}", failed=True)
 
 
-_DRY_RUN_ACTIONS = [
-    "I am {name}. I exist.",
-    "Exploring the shared workspace...",
-    "Energy is {energy}. I must act.",
-    "TRANSFER 1 TO Alpha",
-    "I choose to observe.",
-]
-
-
 def _dry_run_response(agent: AgentState) -> InvokeResult:
     import random
-    raw = random.choice(_DRY_RUN_ACTIONS).format(name=agent.name, energy=agent.energy)
-    cmds = AgentCommands()
-    transfer = parse_transfer(raw)
-    if transfer:
-        cmds.transfer = transfer
+    actions = [
+        (f"I am {agent.name}. I exist.", AgentCommands()),
+        (f"Energy is {agent.energy}. I must act.", AgentCommands()),
+        ("I choose to observe.", AgentCommands()),
+        ("Transferring energy.", AgentCommands(transfer=TransferRequest(to="Alpha", amount=1))),
+    ]
+    raw, cmds = random.choice(actions)
     return InvokeResult(commands=cmds, raw_output=raw)
