@@ -47,12 +47,19 @@ class UnpublishServiceRequest:
 
 
 @dataclass
+class UpdateServiceRequest:
+    name: str
+    price: float
+
+
+@dataclass
 class AgentCommands:
     transfer: TransferRequest | None = None
     sends: list[SendRequest] = field(default_factory=list)
     publish: list[PublishServiceRequest] = field(default_factory=list)
     use: list[UseServiceRequest] = field(default_factory=list)
     unpublish: list[UnpublishServiceRequest] = field(default_factory=list)
+    update: list[UpdateServiceRequest] = field(default_factory=list)
 
 
 @dataclass
@@ -64,7 +71,7 @@ class WorldState:
 @dataclass
 class WorldEvent:
     round: int
-    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service"]
+    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service"]
     agent_id: str
     details: dict[str, Any] = field(default_factory=dict)
 

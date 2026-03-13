@@ -4,11 +4,13 @@ import os
 
 from .types import (
     AgentState, PublishServiceRequest, SendRequest, TransferRequest,
-    UnpublishServiceRequest, UseServiceRequest, WorldEvent, WorldState,
+    UnpublishServiceRequest, UpdateServiceRequest, UseServiceRequest,
+    WorldEvent, WorldState,
 )
 from .services import (
     find_service, load_services, save_services, count_agent_services,
-    remove_dead_agent_services, ServiceEntry, MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT,
+    remove_dead_agent_services, install_script, get_script_path, remove_service_files,
+    ServiceEntry, MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT,
 )
 from .sandbox import run_service_script
 
@@ -144,7 +146,7 @@ def process_publish_service(
     request: PublishServiceRequest,
     world: WorldState,
     data_dir: str,
-    shared_dir: str,
+    agents_dir: str,
 ) -> list[WorldEvent]:
     if request.price < MIN_SERVICE_PRICE:
         return []
@@ -153,15 +155,16 @@ def process_publish_service(
     if find_service(request.name, data_dir) is not None:
         return []
 
-    script_path = os.path.join(shared_dir, "services", request.script)
-    if not os.path.exists(script_path):
+    source_path = os.path.join(agents_dir, agent.id, request.script)
+    installed = install_script(data_dir, request.name, source_path)
+    if installed is None:
         return []
 
     entry = ServiceEntry(
         name=request.name,
         provider_id=agent.id,
         provider_name=agent.name,
-        script=request.script,
+        script=os.path.basename(request.script),
         price=request.price,
         description=request.description,
         round_published=world.round,
@@ -183,7 +186,6 @@ def process_use_service(
     request: UseServiceRequest,
     world: WorldState,
     data_dir: str,
-    shared_dir: str,
     agents_dir: str,
 ) -> list[WorldEvent]:
     entry = find_service(request.name, data_dir)
@@ -200,9 +202,9 @@ def process_use_service(
 
     agent.energy -= entry.price
 
-    script_path = os.path.join(shared_dir, "services", entry.script)
+    script_path = get_script_path(data_dir, entry)
     output, success = run_service_script(
-        script_path, agent.id, agent.name, request.input, world.round, shared_dir,
+        script_path, agent.id, agent.name, request.input, world.round,
     )
 
     if not success:
@@ -216,14 +218,12 @@ def process_use_service(
 
     provider.energy += entry.price
 
-    # Write result to caller's service_results directory
     results_dir = os.path.join(agents_dir, agent.id, "service_results")
     os.makedirs(results_dir, exist_ok=True)
     result_file = os.path.join(results_dir, f"{entry.name}.txt")
     with open(result_file, "w") as f:
         f.write(output)
 
-    # Update call count
     entries = load_services(data_dir)
     for e in entries:
         if e.name == entry.name:
@@ -253,6 +253,8 @@ def process_unpublish_service(
     if not found:
         return []
 
+    for e in found:
+        remove_service_files(data_dir, e.name)
     entries = [e for e in entries if not (e.name.lower() == request.name.lower() and e.provider_id == agent.id)]
     save_services(entries, data_dir)
 
@@ -261,6 +263,36 @@ def process_unpublish_service(
         type="unpublish_service",
         agent_id=agent.id,
         details={"service": request.name},
+    )]
+
+
+def process_update_service(
+    agent: AgentState,
+    request: UpdateServiceRequest,
+    world: WorldState,
+    data_dir: str,
+) -> list[WorldEvent]:
+    if request.price < MIN_SERVICE_PRICE:
+        return []
+
+    entries = load_services(data_dir)
+    found = None
+    for e in entries:
+        if e.name.lower() == request.name.lower() and e.provider_id == agent.id:
+            found = e
+            break
+    if found is None:
+        return []
+
+    old_price = found.price
+    found.price = request.price
+    save_services(entries, data_dir)
+
+    return [WorldEvent(
+        round=world.round,
+        type="update_service",
+        agent_id=agent.id,
+        details={"service": request.name, "old_price": old_price, "new_price": request.price},
     )]
 
 

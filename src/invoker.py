@@ -6,7 +6,8 @@ import tempfile
 
 from .types import (
     AgentState, AgentCommands, SendRequest, TransferRequest,
-    PublishServiceRequest, UseServiceRequest, UnpublishServiceRequest, WorldState,
+    PublishServiceRequest, UseServiceRequest, UnpublishServiceRequest,
+    UpdateServiceRequest, WorldState,
 )
 from .prompt import build_full_prompt, COMMANDS_FILE
 from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
@@ -61,6 +62,10 @@ USE_PATTERN = re.compile(
 )
 UNPUBLISH_PATTERN = re.compile(
     r'^\s*UNPUBLISH\s+SERVICE\s+([\w-]+)\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+UPDATE_PATTERN = re.compile(
+    r'^\s*UPDATE\s+SERVICE\s+([\w-]+)\s+PRICE\s+([\d.]+)\s*$',
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -140,6 +145,11 @@ def _read_commands_file(agent_dir: str) -> AgentCommands:
         unpub_match = UNPUBLISH_PATTERN.match(line)
         if unpub_match:
             cmds.unpublish.append(UnpublishServiceRequest(name=unpub_match.group(1)))
+            continue
+
+        update_match = UPDATE_PATTERN.match(line)
+        if update_match:
+            cmds.update.append(UpdateServiceRequest(name=update_match.group(1), price=float(update_match.group(2))))
 
     return cmds
 

@@ -5,7 +5,8 @@ from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldS
 from .world import get_alive_agents, save_world
 from .physics import (
     consume_energy, process_transfer, process_send, check_deaths, random_energy_reward,
-    process_publish_service, process_use_service, process_unpublish_service, cleanup_dead_services,
+    process_publish_service, process_use_service, process_unpublish_service,
+    process_update_service, cleanup_dead_services,
 )
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
@@ -47,6 +48,8 @@ def _invoke_worker(
             actions.append(f"{len(result.commands.use)} USE")
         if result.commands.unpublish:
             actions.append(f"{len(result.commands.unpublish)} UNPUBLISH")
+        if result.commands.update:
+            actions.append(f"{len(result.commands.update)} UPDATE")
         action = ", ".join(actions) if actions else "no actions"
         cost_str = f", ${result.cost_usd:.3f}" if result.cost_usd > 0 else ""
         print(f"  [{agent.name}] done ({action}{cost_str})", flush=True)
@@ -69,15 +72,18 @@ def _process_agent_result(
         all_events.extend(process_send(agent, send_req, world, config.agents_dir))
 
     for pub_req in cmds.publish:
-        all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.shared_dir))
+        all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.agents_dir))
 
     for unpub_req in cmds.unpublish:
         all_events.extend(process_unpublish_service(agent, unpub_req, world, config.data_dir))
 
+    for update_req in cmds.update:
+        all_events.extend(process_update_service(agent, update_req, world, config.data_dir))
+
     for use_req in cmds.use:
         if agent.energy <= 0:
             break
-        all_events.extend(process_use_service(agent, use_req, world, config.data_dir, config.shared_dir, config.agents_dir))
+        all_events.extend(process_use_service(agent, use_req, world, config.data_dir, config.agents_dir))
 
     consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
     all_events.extend(consume_events)

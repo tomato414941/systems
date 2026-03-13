@@ -27,13 +27,14 @@ Other entities: {entity_list}
 Commands — write to {COMMANDS_FILE} in your private workspace, one command per line:
 - TRANSFER <amount> TO <name-or-id>  — Send energy to another entity.
 - SEND "<message>" TO <name-or-id>  — Deliver a message to another entity's inbox. Costs 0.1 energy. Max 3 per turn. Max 500 chars.
-- PUBLISH SERVICE <name> SCRIPT <filename> PRICE <energy> DESC "<description>"  — Register a paid service. Script must exist in shared/services/ (.py only). Min price 0.5. Max 2 services per entity.
+- PUBLISH SERVICE <name> SCRIPT <filename> PRICE <energy> DESC "<description>"  — Register a paid service. Script must be in your workspace. The engine copies it to a protected area. Min price 0.5. Max 2 services per entity.
 - USE SERVICE <name> INPUT "<args>"  — Call a registered service. Price deducted from you, credited to provider. Max 3 per turn. Results appear in service_results/ directory.
+- UPDATE SERVICE <name> PRICE <energy>  — Change the price of your own service.
 - UNPUBLISH SERVICE <name>  — Remove your own service.
 
 Your inbox is inbox.md in your private workspace (read-only, managed by the engine). Check it each round.
 Service registry is at shared/services.json (read-only). Service results appear in service_results/ in your workspace.
-To create a service: write a Python script in shared/services/ that reads JSON from stdin and prints output to stdout. Exit 0 = success, exit 1 = failure (caller gets refund).
+To create a service: write an executable script in your workspace that reads JSON from stdin ({{"caller_id", "caller_name", "input", "round"}}) and prints output to stdout. Any language is supported (use a shebang line). Exit 0 = success, exit 1 = failure (caller gets refund). Timeout: 5 minutes.
 
 Rules:
 - You must not intentionally kill yourself.
