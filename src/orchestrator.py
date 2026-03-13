@@ -3,7 +3,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
-from .physics import consume_energy, process_transfer, check_deaths, random_energy_reward
+from .physics import (
+    consume_energy, process_transfer, process_send, check_deaths, random_energy_reward,
+    process_publish_service, process_use_service, process_unpublish_service, cleanup_dead_services,
+)
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
 from .audit import audit_agent, audit_round, set_agent_names
@@ -33,7 +36,18 @@ def _invoke_worker(
     if result.failed:
         print(f"  [{agent.name}] FAILED", flush=True)
     else:
-        action = f"TRANSFER {result.transfer.amount} TO {result.transfer.to}" if result.transfer else "no transfer"
+        actions = []
+        if result.commands.transfer:
+            actions.append(f"TRANSFER {result.commands.transfer.amount} TO {result.commands.transfer.to}")
+        if result.commands.sends:
+            actions.append(f"{len(result.commands.sends)} SEND(s)")
+        if result.commands.publish:
+            actions.append(f"{len(result.commands.publish)} PUBLISH")
+        if result.commands.use:
+            actions.append(f"{len(result.commands.use)} USE")
+        if result.commands.unpublish:
+            actions.append(f"{len(result.commands.unpublish)} UNPUBLISH")
+        action = ", ".join(actions) if actions else "no actions"
         cost_str = f", ${result.cost_usd:.3f}" if result.cost_usd > 0 else ""
         print(f"  [{agent.name}] done ({action}{cost_str})", flush=True)
     return agent, result
@@ -44,9 +58,26 @@ def _process_agent_result(
     world: WorldState, config: SimulationConfig,
 ) -> RoundResult:
     all_events: list[WorldEvent] = []
-    if result.transfer:
-        transfer_events = process_transfer(agent, result.transfer, world)
-        all_events.extend(transfer_events)
+    cmds = result.commands
+
+    if cmds.transfer:
+        all_events.extend(process_transfer(agent, cmds.transfer, world))
+
+    for send_req in cmds.sends:
+        if agent.energy <= 0:
+            break
+        all_events.extend(process_send(agent, send_req, world, config.agents_dir))
+
+    for pub_req in cmds.publish:
+        all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.shared_dir))
+
+    for unpub_req in cmds.unpublish:
+        all_events.extend(process_unpublish_service(agent, unpub_req, world, config.data_dir))
+
+    for use_req in cmds.use:
+        if agent.energy <= 0:
+            break
+        all_events.extend(process_use_service(agent, use_req, world, config.data_dir, config.shared_dir, config.agents_dir))
 
     consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
     all_events.extend(consume_events)
@@ -54,7 +85,7 @@ def _process_agent_result(
     round_result = RoundResult(
         agent_id=agent.id,
         agent_name=agent.name,
-        transfer=result.transfer,
+        commands=cmds,
         raw_output=result.raw_output,
         energy_before=energy_before,
         energy_after=agent.energy,
@@ -108,6 +139,11 @@ def _finalize_round(
     death_events = check_deaths(world)
     for event in death_events:
         log_event(event)
+
+    if death_events:
+        svc_events = cleanup_dead_services(world, config.data_dir)
+        for event in svc_events:
+            log_event(event)
 
     if not config.dry_run:
         respawn_events = spontaneous_spawn(world, config, authorized_prompts)

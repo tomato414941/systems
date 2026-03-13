@@ -1,5 +1,8 @@
-from src.types import AgentState, WorldState
-from src.physics import consume_energy, process_transfer, check_deaths
+import os
+import tempfile
+
+from src.types import AgentState, SendRequest, WorldState
+from src.physics import consume_energy, process_transfer, process_send, check_deaths
 
 
 def make_agent(**overrides) -> AgentState:
@@ -106,6 +109,56 @@ class TestCheckDeaths:
 
         assert agent.alive is True
         assert len(events) == 0
+
+
+class TestProcessSend:
+    def test_delivers_message_to_inbox(self):
+        with tempfile.TemporaryDirectory() as agents_dir:
+            sender = make_agent(id="agent-0", name="Alpha", energy=10)
+            receiver = make_agent(id="agent-1", name="Beta", energy=10)
+            os.makedirs(os.path.join(agents_dir, "agent-1"))
+            world = make_world([sender, receiver])
+            req = SendRequest(to="Beta", message="hello")
+            events = process_send(sender, req, world, agents_dir)
+
+            assert sender.energy == 10 - 0.1
+            assert len(events) == 1
+            assert events[0].type == "send"
+            inbox = open(os.path.join(agents_dir, "agent-1", "inbox.md")).read()
+            assert "FROM Alpha: hello" in inbox
+
+    def test_fails_if_not_enough_energy(self):
+        with tempfile.TemporaryDirectory() as agents_dir:
+            sender = make_agent(energy=0.05)
+            receiver = make_agent(id="agent-1", name="Beta", energy=10)
+            os.makedirs(os.path.join(agents_dir, "agent-1"))
+            world = make_world([sender, receiver])
+            events = process_send(sender, SendRequest(to="Beta", message="hi"), world, agents_dir)
+
+            assert len(events) == 0
+            assert sender.energy == 0.05
+
+    def test_fails_if_recipient_not_found(self):
+        with tempfile.TemporaryDirectory() as agents_dir:
+            sender = make_agent(energy=10)
+            world = make_world([sender])
+            events = process_send(sender, SendRequest(to="Nobody", message="hi"), world, agents_dir)
+
+            assert len(events) == 0
+            assert sender.energy == 10
+
+    def test_appends_multiple_messages(self):
+        with tempfile.TemporaryDirectory() as agents_dir:
+            sender = make_agent(id="agent-0", name="Alpha", energy=10)
+            receiver = make_agent(id="agent-1", name="Beta", energy=10)
+            os.makedirs(os.path.join(agents_dir, "agent-1"))
+            world = make_world([sender, receiver])
+            process_send(sender, SendRequest(to="Beta", message="msg1"), world, agents_dir)
+            process_send(sender, SendRequest(to="Beta", message="msg2"), world, agents_dir)
+
+            inbox = open(os.path.join(agents_dir, "agent-1", "inbox.md")).read()
+            assert "msg1" in inbox
+            assert "msg2" in inbox
 
 
 def _req(to: str, amount: int):

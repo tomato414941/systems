@@ -4,16 +4,19 @@ import re
 import subprocess
 import tempfile
 
-from .types import AgentState, TransferRequest, WorldState
-from .prompt import build_full_prompt, TRANSFER_FILE
+from .types import (
+    AgentState, AgentCommands, SendRequest, TransferRequest,
+    PublishServiceRequest, UseServiceRequest, UnpublishServiceRequest, WorldState,
+)
+from .prompt import build_full_prompt, COMMANDS_FILE
 from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
 
 
 class InvokeResult:
-    __slots__ = ("transfer", "raw_output", "stream_file", "cost_usd", "failed")
+    __slots__ = ("commands", "raw_output", "stream_file", "cost_usd", "failed")
 
-    def __init__(self, transfer: TransferRequest | None, raw_output: str, stream_file: str = "", cost_usd: float = 0.0, failed: bool = False) -> None:
-        self.transfer = transfer
+    def __init__(self, commands: AgentCommands | None = None, raw_output: str = "", stream_file: str = "", cost_usd: float = 0.0, failed: bool = False) -> None:
+        self.commands = commands or AgentCommands()
         self.raw_output = raw_output
         self.stream_file = stream_file
         self.cost_usd = cost_usd
@@ -44,34 +47,108 @@ def invoke_agent(
 
 
 
-def _clear_transfer_file(agent_dir: str) -> None:
-    path = os.path.join(agent_dir, TRANSFER_FILE)
-    if os.path.exists(path):
-        os.unlink(path)
+SEND_PATTERN = re.compile(
+    r'^\s*SEND\s+"([^"]{1,500})"\s+TO\s+([\w-]+)\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+PUBLISH_PATTERN = re.compile(
+    r'^\s*PUBLISH\s+SERVICE\s+([\w-]+)\s+SCRIPT\s+([\w/.]+)\s+PRICE\s+([\d.]+)\s+DESC\s+"([^"]{1,200})"\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+USE_PATTERN = re.compile(
+    r'^\s*USE\s+SERVICE\s+([\w-]+)\s+INPUT\s+"([^"]{1,500})"\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+UNPUBLISH_PATTERN = re.compile(
+    r'^\s*UNPUBLISH\s+SERVICE\s+([\w-]+)\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+MAX_SENDS_PER_TURN = 3
+MAX_USES_PER_TURN = 3
+MAX_PUBLISHES_PER_TURN = 2
 
 
-def _read_transfer_file(agent_dir: str) -> TransferRequest | None:
-    """Read and parse transfer.txt from agent workspace."""
-    path = os.path.join(agent_dir, TRANSFER_FILE)
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        text = f.read().strip()
-    os.unlink(path)
+def _clear_command_files(agent_dir: str) -> None:
+    for fname in (COMMANDS_FILE, "transfer.txt"):
+        path = os.path.join(agent_dir, fname)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def _read_commands_file(agent_dir: str) -> AgentCommands:
+    """Read and parse commands.txt (or fallback to transfer.txt)."""
+    cmds = AgentCommands()
+
+    # Try commands.txt first, fall back to transfer.txt
+    cmd_path = os.path.join(agent_dir, COMMANDS_FILE)
+    legacy_path = os.path.join(agent_dir, "transfer.txt")
+
+    if os.path.exists(cmd_path):
+        with open(cmd_path) as f:
+            text = f.read().strip()
+        os.unlink(cmd_path)
+        # Also clean up legacy file if present
+        if os.path.exists(legacy_path):
+            os.unlink(legacy_path)
+    elif os.path.exists(legacy_path):
+        with open(legacy_path) as f:
+            text = f.read().strip()
+        os.unlink(legacy_path)
+        if text:
+            # Legacy format: just "<amount> TO <target>" without TRANSFER prefix
+            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            if lines:
+                cmds.transfer = parse_transfer("TRANSFER " + lines[-1])
+            return cmds
+    else:
+        return cmds
+
     if not text:
-        return None
-    # Parse last non-empty line
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    if not lines:
-        return None
-    return parse_transfer("TRANSFER " + lines[-1])
+        return cmds
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        transfer = parse_transfer(line)
+        if transfer:
+            cmds.transfer = transfer  # last one wins
+            continue
+
+        send_match = SEND_PATTERN.match(line)
+        if send_match and len(cmds.sends) < MAX_SENDS_PER_TURN:
+            cmds.sends.append(SendRequest(to=send_match.group(2), message=send_match.group(1)))
+            continue
+
+        pub_match = PUBLISH_PATTERN.match(line)
+        if pub_match and len(cmds.publish) < MAX_PUBLISHES_PER_TURN:
+            cmds.publish.append(PublishServiceRequest(
+                name=pub_match.group(1),
+                script=pub_match.group(2),
+                price=float(pub_match.group(3)),
+                description=pub_match.group(4),
+            ))
+            continue
+
+        use_match = USE_PATTERN.match(line)
+        if use_match and len(cmds.use) < MAX_USES_PER_TURN:
+            cmds.use.append(UseServiceRequest(name=use_match.group(1), input=use_match.group(2)))
+            continue
+
+        unpub_match = UNPUBLISH_PATTERN.match(line)
+        if unpub_match:
+            cmds.unpublish.append(UnpublishServiceRequest(name=unpub_match.group(1)))
+
+    return cmds
 
 def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
     fd, prompt_file = tempfile.mkstemp(prefix=f"systems-prompt-{agent.id}-", suffix=".txt")
     stream_dir = os.path.join(logs_dir, "streams")
     os.makedirs(stream_dir, exist_ok=True)
     stream_file = os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl")
-    _clear_transfer_file(cwd)
+    _clear_command_files(cwd)
     try:
         os.write(fd, prompt.encode())
         os.close(fd)
@@ -92,14 +169,14 @@ def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, log
 
         if result.returncode != 0:
             print(f"  [{agent.name}] claude exited with code {result.returncode}: {result.stderr[:200]}")
-            return InvokeResult(transfer=None, raw_output=result.stderr[:500], stream_file=stream_file, failed=True)
+            return InvokeResult(raw_output=result.stderr[:500], stream_file=stream_file, failed=True)
 
         # Extract text and cost from stream
         raw = _extract_text_from_claude_stream(result.stdout)
         cost_usd = _extract_cost_from_claude_stream(result.stdout)
-        transfer = _read_transfer_file(cwd)
+        commands = _read_commands_file(cwd)
 
-        return InvokeResult(transfer=transfer, raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
+        return InvokeResult(commands=commands, raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
     except Exception as err:
         return _handle_error(err, agent)
     finally:
@@ -116,7 +193,7 @@ def _invoke_codex(prompt: str, agent: AgentState, model: str, timeout: int, logs
     stream_dir = os.path.join(logs_dir, "streams")
     os.makedirs(stream_dir, exist_ok=True)
     stream_file = os.path.join(stream_dir, f"r{round_num}-{agent.id}.jsonl")
-    _clear_transfer_file(cwd)
+    _clear_command_files(cwd)
     try:
         os.write(fd, prompt.encode())
         os.close(fd)
@@ -137,15 +214,15 @@ def _invoke_codex(prompt: str, agent: AgentState, model: str, timeout: int, logs
 
         if result.returncode != 0:
             print(f"  [{agent.name}] codex exited with code {result.returncode}: {result.stderr[:200]}")
-            return InvokeResult(transfer=None, raw_output=result.stderr[:500], stream_file=stream_file, failed=True)
+            return InvokeResult(raw_output=result.stderr[:500], stream_file=stream_file, failed=True)
 
         with open(output_file) as f:
             raw = f.read()
 
         cost_usd = _extract_cost_from_codex_stream(result.stdout, model)
-        transfer = _read_transfer_file(cwd)
+        commands = _read_commands_file(cwd)
 
-        return InvokeResult(transfer=transfer, raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
+        return InvokeResult(commands=commands, raw_output=raw, stream_file=stream_file, cost_usd=cost_usd)
     except Exception as err:
         return _handle_error(err, agent)
     finally:
@@ -243,7 +320,7 @@ def parse_transfer(raw: str) -> TransferRequest | None:
 def _handle_error(err: Exception, agent: AgentState) -> InvokeResult:
     message = str(err)[:200]
     print(f"  [{agent.name}] invocation error: {message}")
-    return InvokeResult(transfer=None, raw_output=f"ERROR: {str(err)[:500]}", failed=True)
+    return InvokeResult(raw_output=f"ERROR: {str(err)[:500]}", failed=True)
 
 
 _DRY_RUN_ACTIONS = [
@@ -258,4 +335,8 @@ _DRY_RUN_ACTIONS = [
 def _dry_run_response(agent: AgentState) -> InvokeResult:
     import random
     raw = random.choice(_DRY_RUN_ACTIONS).format(name=agent.name, energy=agent.energy)
-    return InvokeResult(transfer=parse_transfer(raw), raw_output=raw)
+    cmds = AgentCommands()
+    transfer = parse_transfer(raw)
+    if transfer:
+        cmds.transfer = transfer
+    return InvokeResult(commands=cmds, raw_output=raw)

@@ -1,6 +1,16 @@
 import random
 
-from .types import AgentState, TransferRequest, WorldEvent, WorldState
+import os
+
+from .types import (
+    AgentState, PublishServiceRequest, SendRequest, TransferRequest,
+    UnpublishServiceRequest, UseServiceRequest, WorldEvent, WorldState,
+)
+from .services import (
+    find_service, load_services, save_services, count_agent_services,
+    remove_dead_agent_services, ServiceEntry, MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT,
+)
+from .sandbox import run_service_script
 
 
 def consume_energy(agent: AgentState, round_num: int, cost_usd: float = 0.0, base_metabolism: float = 0.0) -> list[WorldEvent]:
@@ -51,6 +61,43 @@ def process_transfer(
     )]
 
 
+SEND_COST = 0.1
+
+
+def process_send(
+    sender: AgentState,
+    request: SendRequest,
+    world: WorldState,
+    agents_dir: str,
+) -> list[WorldEvent]:
+    if sender.energy < SEND_COST:
+        return []
+
+    target = request.to.lower()
+    receiver = next(
+        (a for a in world.agents if a.alive and a.id != sender.id
+         and (a.name.lower() == target or a.id.lower() == target)),
+        None,
+    )
+    if receiver is None:
+        return []
+
+    sender.energy -= SEND_COST
+    message = request.message[:500]
+
+    inbox_path = os.path.join(agents_dir, receiver.id, "inbox.md")
+    line = f"[R{world.round}] FROM {sender.name}: {message}\n"
+    with open(inbox_path, "a") as f:
+        f.write(line)
+
+    return [WorldEvent(
+        round=world.round,
+        type="send",
+        agent_id=sender.id,
+        details={"to": receiver.id, "to_name": receiver.name, "message": message[:100]},
+    )]
+
+
 def random_energy_reward(world: WorldState, count: int, amount: int) -> list[WorldEvent]:
     alive = [a for a in world.agents if a.alive]
     if not alive:
@@ -90,3 +137,136 @@ def check_deaths(world: WorldState) -> list[WorldEvent]:
                 details={"reason": "energy_depleted"},
             ))
     return events
+
+
+def process_publish_service(
+    agent: AgentState,
+    request: PublishServiceRequest,
+    world: WorldState,
+    data_dir: str,
+    shared_dir: str,
+) -> list[WorldEvent]:
+    if request.price < MIN_SERVICE_PRICE:
+        return []
+    if count_agent_services(agent.id, data_dir) >= MAX_SERVICES_PER_AGENT:
+        return []
+    if find_service(request.name, data_dir) is not None:
+        return []
+
+    script_path = os.path.join(shared_dir, "services", request.script)
+    if not os.path.exists(script_path):
+        return []
+
+    entry = ServiceEntry(
+        name=request.name,
+        provider_id=agent.id,
+        provider_name=agent.name,
+        script=request.script,
+        price=request.price,
+        description=request.description,
+        round_published=world.round,
+    )
+    entries = load_services(data_dir)
+    entries.append(entry)
+    save_services(entries, data_dir)
+
+    return [WorldEvent(
+        round=world.round,
+        type="publish_service",
+        agent_id=agent.id,
+        details={"service": request.name, "price": request.price, "script": request.script},
+    )]
+
+
+def process_use_service(
+    agent: AgentState,
+    request: UseServiceRequest,
+    world: WorldState,
+    data_dir: str,
+    shared_dir: str,
+    agents_dir: str,
+) -> list[WorldEvent]:
+    entry = find_service(request.name, data_dir)
+    if entry is None:
+        return []
+    if entry.provider_id == agent.id:
+        return []
+    if agent.energy < entry.price:
+        return []
+
+    provider = next((a for a in world.agents if a.id == entry.provider_id and a.alive), None)
+    if provider is None:
+        return []
+
+    agent.energy -= entry.price
+
+    script_path = os.path.join(shared_dir, "services", entry.script)
+    output, success = run_service_script(
+        script_path, agent.id, agent.name, request.input, world.round, shared_dir,
+    )
+
+    if not success:
+        agent.energy += entry.price
+        return [WorldEvent(
+            round=world.round,
+            type="use_service",
+            agent_id=agent.id,
+            details={"service": request.name, "success": False, "error": output[:200]},
+        )]
+
+    provider.energy += entry.price
+
+    # Write result to caller's service_results directory
+    results_dir = os.path.join(agents_dir, agent.id, "service_results")
+    os.makedirs(results_dir, exist_ok=True)
+    result_file = os.path.join(results_dir, f"{entry.name}.txt")
+    with open(result_file, "w") as f:
+        f.write(output)
+
+    # Update call count
+    entries = load_services(data_dir)
+    for e in entries:
+        if e.name == entry.name:
+            e.call_count += 1
+            break
+    save_services(entries, data_dir)
+
+    return [WorldEvent(
+        round=world.round,
+        type="use_service",
+        agent_id=agent.id,
+        details={
+            "service": request.name, "provider": entry.provider_id,
+            "price": entry.price, "success": True,
+        },
+    )]
+
+
+def process_unpublish_service(
+    agent: AgentState,
+    request: UnpublishServiceRequest,
+    world: WorldState,
+    data_dir: str,
+) -> list[WorldEvent]:
+    entries = load_services(data_dir)
+    found = [e for e in entries if e.name.lower() == request.name.lower() and e.provider_id == agent.id]
+    if not found:
+        return []
+
+    entries = [e for e in entries if not (e.name.lower() == request.name.lower() and e.provider_id == agent.id)]
+    save_services(entries, data_dir)
+
+    return [WorldEvent(
+        round=world.round,
+        type="unpublish_service",
+        agent_id=agent.id,
+        details={"service": request.name},
+    )]
+
+
+def cleanup_dead_services(world: WorldState, data_dir: str) -> list[WorldEvent]:
+    removed = remove_dead_agent_services(world, data_dir)
+    return [
+        WorldEvent(round=world.round, type="unpublish_service", agent_id="system", details={"service": name, "reason": "provider_dead"})
+        for name in removed
+    ]

@@ -28,18 +28,23 @@ def log_event(event: WorldEvent) -> None:
 
 def print_round_summary(world: WorldState, results: list[RoundResult]) -> None:
     alive = [a for a in world.agents if a.alive]
-    transfers = [r for r in results if r.transfer]
+    transfers = [r for r in results if r.commands.transfer]
+    sends = sum(len(r.commands.sends) for r in results)
 
     print(f"\n--- Round {world.round} ---")
     print(f"  Population: {len(alive)}/{len(world.agents)}")
     if transfers:
         print(f"  Transfers: {len(transfers)}")
+    if sends:
+        print(f"  Messages: {sends}")
     for r in results:
         agent = next((a for a in world.agents if a.id == r.agent_id), None)
         if agent is None:
             continue
         status = "ALIVE" if agent.alive else "DEAD"
         line = f"  {r.agent_name}: E={r.energy_before:.2f}->{r.energy_after:.2f} [{status}]"
-        if r.transfer:
-            line += f" (gave {r.transfer.amount} to {r.transfer.to})"
+        if r.commands.transfer:
+            line += f" (gave {r.commands.transfer.amount} to {r.commands.transfer.to})"
+        if r.commands.sends:
+            line += f" ({len(r.commands.sends)} msg)"
         print(line)
