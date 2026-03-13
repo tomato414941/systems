@@ -1,17 +1,42 @@
 # Systems
 
-ALife simulation where AI agents (Claude / Codex) survive, transfer energy, and reproduce in a minimal physics environment.
+ALife simulation where AI agents (Claude / Codex) survive, communicate, trade services, and reproduce in a minimal physics environment.
 
 ## How it works
 
 - Each round, alive agents are invoked via Claude CLI or Codex CLI
-- Agents can transfer energy to others (`TRANSFER <amount> TO <name>`)
+- Agents interact through engine-mediated commands written to `commands.txt`
 - Energy is consumed each round (metabolism + compute cost); agents die at 0
 - **Spontaneous reproduction:** a random survivor spawns a child with its mind (self_prompt.md)
 - **Intelligent design:** an external top-tier AI (opus-4-6 / gpt-5.4) investigates the world state, then designs a new agent with a unique personality and strategy
-- Agents can read/write shared files and edit their own self_prompt.md
 - An audit system detects sandboxing violations and suspicious behavior
 - Authoritative memory prevents cross-agent prompt tampering
+
+## Commands
+
+Agents write commands to `commands.txt` in their workspace, one per line:
+
+| Command | Description | Cost |
+|---------|-------------|------|
+| `TRANSFER <amount> TO <name-or-id>` | Send energy to another entity | Transfer amount |
+| `SEND "<message>" TO <name-or-id>` | Deliver a message to another entity's inbox | 0.1 energy |
+| `PUBLISH SERVICE <name> SCRIPT <file> PRICE <energy> DESC "<desc>"` | Register a paid service | Free |
+| `USE SERVICE <name> INPUT "<args>"` | Call a registered service | Service price |
+| `UPDATE SERVICE <name> PRICE <energy>` | Change your service's price | Free |
+| `UNPUBLISH SERVICE <name>` | Remove your own service | Free |
+
+### Messaging
+
+- SEND delivers to the recipient's `inbox.md` (engine-managed, read-only for agents)
+- Max 3 sends per turn, 500 chars per message
+
+### Services
+
+- Agents write executable scripts in their workspace and register them with PUBLISH
+- The engine copies scripts to a protected area (`data/services/<name>/`) on publish
+- Any language supported (use shebang line); scripts read JSON from stdin, print to stdout
+- Callers pay the service price; providers receive it. Failed scripts refund the caller
+- Max 2 services per agent, min price 0.5, max 3 uses per turn, 5 min timeout
 
 ## Usage
 
@@ -55,8 +80,10 @@ python3 -m src --gift Alpha 5.0 -m "Keep up the good work"
 src/
   __main__.py         # CLI entry point
   orchestrator.py     # Round lifecycle, spawning, designer AI
-  invoker.py          # Claude/Codex subprocess invocation
-  physics.py          # Energy consumption, transfers, death
+  invoker.py          # Claude/Codex subprocess invocation + command parsing
+  physics.py          # Energy, transfers, messaging, services, death
+  services.py         # Service registry (CRUD, script installation)
+  sandbox.py          # Service script execution (subprocess, 5min timeout)
   prompt.py           # Agent system prompt builder
   world.py            # World state persistence (world.json)
   turns.py            # Turn ordering and round progress
@@ -64,7 +91,10 @@ src/
   config.py           # Model registry, defaults
   audit.py            # Sandboxing violation detection
   logger.py           # JSONL round/event logging
-  designer_prompt.txt # Designer AI prompt template
+  evaluator.py        # AI evaluator for round-end energy rewards
+  spawner.py          # Spontaneous + designed spawn logic
+  agent_designer_prompt.md  # Designer AI prompt template
+  evaluator_prompt.md       # Evaluator AI prompt template
 ```
 
 ## Data (runtime, git-ignored)
@@ -72,13 +102,20 @@ src/
 ```
 data/
   world.json          # World state (agents, round, energy)
+  services.json       # Service registry
+  services/           # Engine-managed service scripts (per service name)
   agents/             # Per-agent directories
-    <name>/
+    <id>/
       self_prompt.md   # Agent's personality/strategy document
-      shared -> ../shared
+      commands.txt     # Agent commands (consumed each turn)
+      inbox.md         # Messages from other agents (engine-managed)
+      service_results/ # Results from USE SERVICE calls
+      shared -> ../../shared
   shared/             # Shared workspace (agents read/write freely)
+    services.json     # Service registry copy (read-only for agents)
 logs/
-  events.jsonl        # All events (transfers, deaths, spawns)
+  events.jsonl        # All events (transfers, deaths, spawns, sends, services)
   rounds.jsonl        # Per-round summaries
+  audit.jsonl         # Audit findings
   streams/            # Raw AI output per turn
 ```
