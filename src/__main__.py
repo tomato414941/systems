@@ -10,6 +10,46 @@ from .orchestrator import run_simulation, run_turn
 from .spawner import run_designed_spawn
 
 
+def _run_grid_mode(args) -> None:
+    from .grid.world import create_grid_world, load_grid_world, save_grid_world
+    from .grid.orchestrator import run_grid_turn
+
+    grid_data_dir = os.path.join(DEFAULT_CONFIG.data_dir, "grid")
+    grid_agents_dir = os.path.join(grid_data_dir, "agents")
+    grid_size = args.grid_size
+
+    init_logger(DEFAULT_CONFIG.logs_dir)
+
+    world = load_grid_world(grid_data_dir)
+    if world:
+        alive = [a for a in world.agents if a.alive]
+        print(f"Grid: resuming {len(alive)} alive, round {world.round}")
+    else:
+        world = create_grid_world(
+            width=grid_size,
+            height=grid_size,
+            agent_count=args.agents or 4,
+            initial_energy=args.energy or 8.0,
+            invoker=args.invoker or "claude",
+            claude_model=args.claude_model or DEFAULT_CONFIG.claude_model,
+            codex_model=args.codex_model or DEFAULT_CONFIG.codex_model,
+        )
+        for agent in world.agents:
+            agent_dir = os.path.join(grid_agents_dir, agent.id)
+            os.makedirs(agent_dir, exist_ok=True)
+        save_grid_world(world, grid_data_dir)
+        print(f"Grid: created {grid_size}x{grid_size} world with {len(world.agents)} agents")
+
+    turns = args.turns or 1
+    for _ in range(turns):
+        run_grid_turn(
+            world, grid_agents_dir, grid_data_dir,
+            DEFAULT_CONFIG.logs_dir,
+            timeout=DEFAULT_CONFIG.round_timeout,
+            dry_run=args.dry_run,
+        )
+
+
 def _handle_gift(args) -> None:
     agent_name, amount_str = args.gift
     try:
@@ -62,6 +102,8 @@ def main() -> None:
     parser.add_argument("-e", "--energy", type=int)
     parser.add_argument("-i", "--invoker", choices=["claude", "codex", "mixed"])
     parser.add_argument("-c", "--concurrency", type=int)
+    parser.add_argument("--grid", action="store_true", help="run grid-based world")
+    parser.add_argument("--grid-size", type=int, default=16, help="grid width/height")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("-n", "--rounds", type=int, help="number of rounds to run")
     mode.add_argument("-t", "--turns", type=int, help="number of turns to run")
@@ -77,6 +119,10 @@ def main() -> None:
 
     if args.gift:
         _handle_gift(args)
+        return
+
+    if args.grid:
+        _run_grid_mode(args)
         return
 
     config = SimulationConfig(
