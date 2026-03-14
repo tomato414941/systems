@@ -5,7 +5,8 @@ import os
 
 SERVICE_NAME = "evaluator"
 BUILTIN_SERVICE_PRICE = 0.0
-VOTES_FILE = "eval_votes.json"
+VOTES_DIR = "eval"
+VOTES_FILE = "votes.json"
 EVAL_BUDGET = 16.0
 
 
@@ -37,14 +38,7 @@ def handle_evaluator_service(
     cmd = parts[0].upper()
     if cmd == "STATUS":
         round_votes = votes.get(round_key, {})
-        lines = [f"Round {round_num} votes ({len(round_votes)} cast, budget {EVAL_BUDGET}E):"]
-        tally = {}
-        for v in round_votes.values():
-            t = v["target"]
-            tally[t] = tally.get(t, 0) + 1
-        for target, count in sorted(tally.items(), key=lambda x: -x[1]):
-            lines.append(f"  {target}: {count} vote(s)")
-        return "\n".join(lines), 0.0
+        return f"Round {round_num}: {len(round_votes)} vote(s) cast. Budget: {EVAL_BUDGET}E. Voting is secret — results revealed at round end.", 0.0
 
     if cmd != "RATE":
         target = parts[0]
@@ -126,8 +120,14 @@ def distribute_eval_rewards(world, data_dir: str) -> list:
     return events
 
 
+def _votes_path(data_dir: str) -> str:
+    d = os.path.join(data_dir, VOTES_DIR)
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, VOTES_FILE)
+
+
 def _load_votes(data_dir: str) -> dict:
-    path = os.path.join(data_dir, VOTES_FILE)
+    path = _votes_path(data_dir)
     if os.path.exists(path):
         with open(path) as f:
             return json.load(f)
@@ -135,6 +135,6 @@ def _load_votes(data_dir: str) -> dict:
 
 
 def _save_votes(votes: dict, data_dir: str) -> None:
-    path = os.path.join(data_dir, VOTES_FILE)
+    path = _votes_path(data_dir)
     with open(path, "w") as f:
         json.dump(votes, f, indent=2)
