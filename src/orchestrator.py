@@ -288,9 +288,10 @@ def run_round(
 
     deploy_self_prompts(authorized_prompts, config.private_dir)
 
-    # Invoke all with concurrency
+    # Invoke sequentially — concurrent execution allows agents to tamper
+    # with each other's private directories via path traversal.
     invoke_results: dict[str, tuple[AgentState, InvokeResult, float]] = {}
-    with ThreadPoolExecutor(max_workers=config.concurrency) as pool:
+    with ThreadPoolExecutor(max_workers=1) as pool:
         futures = {
             pool.submit(
                 _invoke_worker, agent, world, config.public_dir,
