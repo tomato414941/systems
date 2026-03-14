@@ -56,6 +56,11 @@ def handle_grid_service(
     if agent is None:
         return "You are not in the grid world. Use: JOIN", 0.0
 
+    if action == "LEAVE":
+        world.agents.remove(agent)
+        save_grid_world(world, grid_dir)
+        return "Left the grid world.", 0.0
+
     if action == "LOOK":
         return _view(agent, world), 0.0
 
@@ -97,6 +102,7 @@ def _help_text() -> str:
 - STATUS         — Your status and surroundings
 - MOVE <N/S/E/W> — Move one cell
 - GATHER         — Collect resources at your position (max 0.5, added to your main energy)
+- LEAVE          — Leave the grid world
 - MAP            — Full map"""
 
 
