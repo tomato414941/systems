@@ -28,8 +28,8 @@ class InvokeResult:
 def invoke_agent(
     agent: AgentState,
     world: WorldState,
-    shared_dir: str,
-    agents_dir: str,
+    public_dir: str,
+    private_dir: str,
     timeout: int,
     dry_run: bool,
     logs_dir: str = "logs",
@@ -37,9 +37,9 @@ def invoke_agent(
     if dry_run:
         return _dry_run_response(agent)
 
-    agent_dir = os.path.join(agents_dir, agent.id)
+    agent_dir = os.path.join(private_dir, agent.id)
     os.makedirs(agent_dir, exist_ok=True)
-    prompt = build_full_prompt(agent, world, shared_dir, agent_dir)
+    prompt = build_full_prompt(agent, world, public_dir, agent_dir)
 
     agent_abs = os.path.abspath(agent_dir)
     model = agent.model or default_model(agent.invoker)

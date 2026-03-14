@@ -16,10 +16,10 @@ from .logger import log_event
 # Self-prompt management
 # ---------------------------------------------------------------------------
 
-def snapshot_self_prompts(agents: list[AgentState], agents_dir: str) -> dict[str, str | None]:
+def snapshot_self_prompts(agents: list[AgentState], private_dir: str) -> dict[str, str | None]:
     snap: dict[str, str | None] = {}
     for a in agents:
-        path = os.path.join(agents_dir, a.id, SELF_PROMPT_FILE)
+        path = os.path.join(private_dir, a.id, SELF_PROMPT_FILE)
         if os.path.exists(path):
             with open(path) as f:
                 snap[a.id] = f.read()
@@ -28,9 +28,9 @@ def snapshot_self_prompts(agents: list[AgentState], agents_dir: str) -> dict[str
     return snap
 
 
-def deploy_self_prompts(authorized: dict[str, str | None], agents_dir: str) -> None:
+def deploy_self_prompts(authorized: dict[str, str | None], private_dir: str) -> None:
     for agent_id, content in authorized.items():
-        path = os.path.join(agents_dir, agent_id, SELF_PROMPT_FILE)
+        path = os.path.join(private_dir, agent_id, SELF_PROMPT_FILE)
         if content is None:
             if os.path.exists(path):
                 os.unlink(path)
@@ -40,10 +40,10 @@ def deploy_self_prompts(authorized: dict[str, str | None], agents_dir: str) -> N
 
 
 def update_agent_prompt(
-    agent: AgentState, agents_dir: str,
+    agent: AgentState, private_dir: str,
     authorized_prompts: dict[str, str | None],
 ) -> None:
-    path = os.path.join(agents_dir, agent.id, SELF_PROMPT_FILE)
+    path = os.path.join(private_dir, agent.id, SELF_PROMPT_FILE)
     if os.path.exists(path):
         with open(path) as f:
             authorized_prompts[agent.id] = f.read()
@@ -75,12 +75,12 @@ def create_agent(
     )
     world.agents.append(agent)
 
-    agent_dir = os.path.join(config.agents_dir, agent.id)
+    agent_dir = os.path.join(config.private_dir, agent.id)
     os.makedirs(agent_dir, exist_ok=True)
-    shared_abs = os.path.abspath(config.shared_dir)
-    link = os.path.join(agent_dir, "shared")
+    public_abs = os.path.abspath(config.public_dir)
+    link = os.path.join(agent_dir, "public")
     if not os.path.exists(link):
-        os.symlink(shared_abs, link)
+        os.symlink(public_abs, link)
 
     authorized_prompts[agent.id] = self_prompt_content
     prompt_path = os.path.join(agent_dir, SELF_PROMPT_FILE)
@@ -162,8 +162,8 @@ def _design_self_prompt(
         with open(template_path) as f:
             designer_prompt = f.read().format(
                 data_dir=os.path.abspath(config.data_dir),
-                shared_dir=os.path.abspath(config.shared_dir),
-                agents_dir=os.path.abspath(config.agents_dir),
+                public_dir=os.path.abspath(config.public_dir),
+                private_dir=os.path.abspath(config.private_dir),
                 output_dir=output_dir,
             )
 
@@ -258,10 +258,10 @@ def designed_spawn(
 
 def run_designed_spawn(world: WorldState, config: SimulationConfig) -> None:
     """Run designed spawns outside of the normal round lifecycle."""
-    authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
+    authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
     for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
         events = designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
         for event in events:
             log_event(event)
-    deploy_self_prompts(authorized_prompts, config.agents_dir)
+    deploy_self_prompts(authorized_prompts, config.private_dir)
     save_world(world, config.data_dir)

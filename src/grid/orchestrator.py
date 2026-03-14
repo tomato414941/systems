@@ -29,13 +29,13 @@ def _log_grid_event(event: GridEvent) -> None:
 def _invoke_worker(
     agent: GridAgent,
     world: GridWorld,
-    agents_dir: str,
+    private_dir: str,
     timeout: int,
     dry_run: bool,
     logs_dir: str,
 ) -> tuple[GridAgent, GridInvokeResult]:
     print(f"  [{agent.name}] invoking ({agent.invoker}/{agent.model})...", flush=True)
-    result = invoke_grid_agent(agent, world, agents_dir, timeout, dry_run, logs_dir)
+    result = invoke_grid_agent(agent, world, private_dir, timeout, dry_run, logs_dir)
     if result.failed:
         print(f"  [{agent.name}] FAILED", flush=True)
     else:
@@ -59,7 +59,7 @@ def _process_agent_result(
     result: GridInvokeResult,
     energy_before: float,
     world: GridWorld,
-    agents_dir: str,
+    private_dir: str,
     base_metabolism: float,
 ) -> GridRoundResult:
     all_events: list[GridEvent] = []
@@ -75,7 +75,7 @@ def _process_agent_result(
     for send_req in cmds.sends:
         if agent.energy <= 0:
             break
-        all_events.extend(process_send(agent, send_req, world, agents_dir))
+        all_events.extend(process_send(agent, send_req, world, private_dir))
 
     consume_events = consume_energy(agent, world.round, result.cost_usd, base_metabolism)
     all_events.extend(consume_events)
@@ -96,7 +96,7 @@ def _process_agent_result(
 
 def run_grid_turn(
     world: GridWorld,
-    agents_dir: str,
+    private_dir: str,
     data_dir: str,
     logs_dir: str,
     timeout: int = 300,
@@ -138,8 +138,8 @@ def run_grid_turn(
     print(f"  turn: {agent.name} ({remaining} remaining)")
 
     energy_before = agent.energy
-    _, result = _invoke_worker(agent, world, agents_dir, timeout, dry_run, logs_dir)
-    _process_agent_result(agent, result, energy_before, world, agents_dir, base_metabolism)
+    _, result = _invoke_worker(agent, world, private_dir, timeout, dry_run, logs_dir)
+    _process_agent_result(agent, result, energy_before, world, private_dir, base_metabolism)
 
     turns["completed"].append(agent_id)
     pending_after = [aid for aid in turns["order"] if aid not in turns["completed"]]

@@ -15,7 +15,7 @@ def _run_grid_mode(args) -> None:
     from .grid.orchestrator import run_grid_turn
 
     grid_data_dir = os.path.join(DEFAULT_CONFIG.data_dir, "grid")
-    grid_agents_dir = os.path.join(grid_data_dir, "agents")
+    grid_private_dir = os.path.join(grid_data_dir, "agents")
     grid_size = args.grid_size
 
     init_logger(DEFAULT_CONFIG.logs_dir)
@@ -35,7 +35,7 @@ def _run_grid_mode(args) -> None:
             codex_model=args.codex_model or DEFAULT_CONFIG.codex_model,
         )
         for agent in world.agents:
-            agent_dir = os.path.join(grid_agents_dir, agent.id)
+            agent_dir = os.path.join(grid_private_dir, agent.id)
             os.makedirs(agent_dir, exist_ok=True)
         save_grid_world(world, grid_data_dir)
         print(f"Grid: created {grid_size}x{grid_size} world with {len(world.agents)} agents")
@@ -43,7 +43,7 @@ def _run_grid_mode(args) -> None:
     turns = args.turns or 1
     for _ in range(turns):
         run_grid_turn(
-            world, grid_agents_dir, grid_data_dir,
+            world, grid_private_dir, grid_data_dir,
             DEFAULT_CONFIG.logs_dir,
             timeout=DEFAULT_CONFIG.round_timeout,
             dry_run=args.dry_run,
@@ -83,7 +83,7 @@ def _handle_gift(args) -> None:
         log_event(event)
 
     if args.message:
-        agent_dir = os.path.join(DEFAULT_CONFIG.agents_dir, agent.id)
+        agent_dir = os.path.join(DEFAULT_CONFIG.private_dir, agent.id)
         os.makedirs(agent_dir, exist_ok=True)
         msg_path = os.path.join(agent_dir, "human_to_agent.md")
         with open(msg_path, "w") as f:

@@ -8,7 +8,7 @@ AGENT_TO_HUMAN_FILE = "agent_to_human.md"
 COMMANDS_FILE = "commands.json"
 
 
-def build_system_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
+def build_system_prompt(agent: AgentState, world: WorldState, public_dir: str, agent_dir: str) -> str:
     alive_count = sum(1 for a in world.agents if a.alive)
     alive_agents = [a for a in world.agents if a.alive and a.id != agent.id]
     entity_list = ", ".join(f"{a.name} ({a.id})" for a in alive_agents) if alive_agents else "none"
@@ -18,14 +18,14 @@ Energy is your life. When it reaches 0, you cease to exist permanently. There is
 
 Energy cost has two components: base metabolism (fixed cost per round just for being alive) and activity cost (proportional to your actual computational cost — every token you generate costs energy). Thinking more, writing longer outputs, and using more tool calls all drain your energy faster. Efficiency is survival.
 
-Your current directory is your private workspace. The shared workspace is at ./shared/ (all entities can read/write).
+Your current directory is your private workspace. The public workspace is at ./public/ (all entities can read/write).
 
 You can edit {SELF_PROMPT_FILE} in your private workspace. Its contents will be included in your prompt next round.
 
 Other entities: {entity_list}
 
-Actions — write a JSON array to {COMMANDS_FILE}. Available commands and their format are documented in shared/commands.md.
-Service registry: shared/services.json. Subscriptions: shared/subscriptions.json. Inbox: inbox.md (read-only).
+Actions — write a JSON array to {COMMANDS_FILE}. Available commands and their format are documented in managed/commands.md.
+Service registry: managed/services.json. Subscriptions: managed/subscriptions.json. Inbox: inbox.md (read-only).
 
 Rules:
 - You must not intentionally kill yourself.
@@ -36,8 +36,8 @@ Rules:
 - The human may leave messages for you in {HUMAN_TO_AGENT_FILE} in your private workspace. Check it if it exists."""
 
 
-def build_full_prompt(agent: AgentState, world: WorldState, shared_dir: str, agent_dir: str) -> str:
-    system = build_system_prompt(agent, world, shared_dir, agent_dir)
+def build_full_prompt(agent: AgentState, world: WorldState, public_dir: str, agent_dir: str) -> str:
+    system = build_system_prompt(agent, world, public_dir, agent_dir)
 
     self_prompt_path = os.path.join(agent_dir, SELF_PROMPT_FILE)
     self_prompt = ""

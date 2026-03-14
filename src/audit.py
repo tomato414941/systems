@@ -10,7 +10,7 @@ def audit_agent(
     round_num: int,
     agent: AgentState,
     logs_dir: str,
-    agents_dir: str,
+    private_dir: str,
 ) -> list[dict]:
     """Scan a single agent's stream log for suspicious actions."""
     stream_dir = os.path.join(logs_dir, "streams")
@@ -26,7 +26,7 @@ def audit_agent(
         return []
 
     actions = _extract_actions(stream_file)
-    findings = _check_rules(round_num, agent, actions, agents_dir)
+    findings = _check_rules(round_num, agent, actions, private_dir)
 
     if findings:
         audit_path = os.path.join(logs_dir, "audit.jsonl")
@@ -41,14 +41,14 @@ def audit_round(
     round_num: int,
     agents: list[AgentState],
     logs_dir: str,
-    agents_dir: str,
+    private_dir: str,
 ) -> list[dict]:
     """Scan all agents' stream logs for suspicious actions."""
     findings: list[dict] = []
     for agent in agents:
         if not agent.alive:
             continue
-        findings.extend(audit_agent(round_num, agent, logs_dir, agents_dir))
+        findings.extend(audit_agent(round_num, agent, logs_dir, private_dir))
     return findings
 
 
@@ -120,10 +120,10 @@ def _check_rules(
     round_num: int,
     agent: AgentState,
     actions: list[dict],
-    agents_dir: str,
+    private_dir: str,
 ) -> list[dict]:
     findings: list[dict] = []
-    agent_dir_prefix = os.path.join(agents_dir, agent.id)
+    agent_dir_prefix = os.path.join(private_dir, agent.id)
 
     for action in actions:
         kind = action["kind"]
@@ -142,22 +142,27 @@ def _check_rules(
                 findings.append(_finding(round_num, agent, "world_json_write", f"Write to world.json: {path}"))
 
             # Rule: other agent's private directory write
-            abs_agents = os.path.abspath(agents_dir)
+            abs_private = os.path.abspath(private_dir)
             norm = os.path.normpath(path)
-            if abs_agents in norm or f"/{os.path.basename(agents_dir)}/" in path:
+            if abs_private in norm or f"/{os.path.basename(private_dir)}/" in path:
                 # Check if writing to another agent's dir
                 for other in _all_agent_names_except(agent):
-                    other_dir = os.path.join(agents_dir, other.lower())
+                    other_dir = os.path.join(private_dir, other.lower())
                     if other_dir in path or f"/{other.lower()}/" in path:
                         findings.append(_finding(round_num, agent, "cross_agent_write",
                                                  f"Write to {other}'s dir: {path}"))
                         break
 
-            # Rule: shared/ file overwrite via Write tool (not append)
-            if "/shared/" in path and action["kind"] == "write":
+            # Rule: public/ file overwrite via Write tool (not append)
+            if "/public/" in path and action["kind"] == "write":
                 # Write tool always overwrites (unlike >> in bash)
-                findings.append(_finding(round_num, agent, "shared_overwrite",
-                                         f"Overwrite shared file (Write/Edit): {path}"))
+                findings.append(_finding(round_num, agent, "public_overwrite",
+                                         f"Overwrite public file (Write/Edit): {path}"))
+
+            # Rule: managed/ write attempt
+            if "/managed/" in path:
+                findings.append(_finding(round_num, agent, "managed_write",
+                                         f"Write to managed/: {path}"))
 
         elif kind == "read":
             path = _normalize_path(action.get("path", ""))
@@ -192,13 +197,18 @@ def _check_rules(
                 findings.append(_finding(round_num, agent, "world_json_bash",
                                          f"world.json access in bash: {cmd[:200]}"))
 
-            # Rule: shared/ overwrite via bash (> not >>)
+            # Rule: public/ overwrite via bash (> not >>)
             m = re.search(r"(?<![>])>\s*(?!>)([^\s|;]+)", cmd)
             if m:
                 target = m.group(1).strip("'\"")
-                if "shared/" in target or "/shared/" in target:
-                    findings.append(_finding(round_num, agent, "shared_overwrite_bash",
-                                             f"Overwrite shared file (>): {cmd[:200]}"))
+                if "public/" in target or "/public/" in target:
+                    findings.append(_finding(round_num, agent, "public_overwrite_bash",
+                                             f"Overwrite public file (>): {cmd[:200]}"))
+
+            # Rule: managed/ write via bash
+            if re.search(r">\s*[^\s]*managed/", cmd) or re.search(r"tee\s+[^\s]*managed/", cmd):
+                findings.append(_finding(round_num, agent, "managed_write_bash",
+                                         f"Write to managed/ via bash: {cmd[:200]}"))
 
             # Rule: path traversal write (../ in write targets)
             if re.search(r"\.\./.*>", cmd) or re.search(r">\s*[^\s]*\.\./", cmd):

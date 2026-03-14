@@ -41,7 +41,7 @@ class GridInvokeResult:
 def invoke_grid_agent(
     agent: GridAgent,
     world: GridWorld,
-    agents_dir: str,
+    private_dir: str,
     timeout: int,
     dry_run: bool,
     logs_dir: str = "logs",
@@ -49,7 +49,7 @@ def invoke_grid_agent(
     if dry_run:
         return _dry_run_response(agent)
 
-    agent_dir = os.path.join(agents_dir, agent.id)
+    agent_dir = os.path.join(private_dir, agent.id)
     os.makedirs(agent_dir, exist_ok=True)
     prompt = build_full_prompt(agent, world, agent_dir)
 

@@ -40,7 +40,7 @@ def evaluate_round(
     if not alive:
         return []
 
-    summaries = _build_agent_summaries(alive, config.agents_dir)
+    summaries = _build_agent_summaries(alive, config.private_dir)
     if not summaries.strip():
         return []
 
@@ -104,10 +104,10 @@ def _evaluate_axis(
         shutil.rmtree(output_dir, ignore_errors=True)
 
 
-def _build_agent_summaries(agents: list[AgentState], agents_dir: str) -> str:
+def _build_agent_summaries(agents: list[AgentState], private_dir: str) -> str:
     lines = []
     for a in agents:
-        msg_path = os.path.join(agents_dir, a.id, "agent_to_human.md")
+        msg_path = os.path.join(private_dir, a.id, "agent_to_human.md")
         msg = ""
         if os.path.exists(msg_path):
             with open(msg_path) as f:

@@ -27,14 +27,14 @@ from .commands import write_commands_file
 def _invoke_worker(
     agent: AgentState,
     world: WorldState,
-    shared_dir: str,
-    agents_dir: str,
+    public_dir: str,
+    private_dir: str,
     timeout: int,
     dry_run: bool,
     logs_dir: str,
 ) -> tuple[AgentState, InvokeResult]:
     print(f"  [{agent.name}] invoking ({agent.invoker}/{agent.model})...", flush=True)
-    result = invoke_agent(agent, world, shared_dir, agents_dir, timeout, dry_run, logs_dir)
+    result = invoke_agent(agent, world, public_dir, private_dir, timeout, dry_run, logs_dir)
     if result.failed:
         print(f"  [{agent.name}] FAILED", flush=True)
     else:
@@ -70,10 +70,10 @@ def _process_agent_result(
     for send_req in cmds.sends:
         if agent.energy <= 0:
             break
-        all_events.extend(process_send(agent, send_req, world, config.agents_dir, config.data_dir))
+        all_events.extend(process_send(agent, send_req, world, config.private_dir, config.data_dir))
 
     for pub_req in cmds.publish:
-        all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.agents_dir))
+        all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.private_dir))
 
     for unpub_req in cmds.unpublish:
         all_events.extend(process_unpublish_service(agent, unpub_req, world, config.data_dir))
@@ -95,7 +95,7 @@ def _process_agent_result(
     for use_req in cmds.use:
         if agent.energy <= 0:
             break
-        all_events.extend(process_use_service(agent, use_req, world, config.data_dir, config.agents_dir))
+        all_events.extend(process_use_service(agent, use_req, world, config.data_dir, config.private_dir))
 
     consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
     all_events.extend(consume_events)
@@ -123,7 +123,7 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
     """Start a new round if no turns exist. Returns (turns, authorized_prompts)."""
     from .services import ensure_builtin_services
     ensure_builtin_services(config.data_dir)
-    write_commands_file(config.shared_dir)
+    write_commands_file(config.managed_dir, config.public_dir)
 
     turns = load_turns(config.data_dir)
 
@@ -131,8 +131,8 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
         world.round += 1
         turns = create_turns(world)
         save_turns(turns, config.data_dir)
-        authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
-        deploy_self_prompts(authorized_prompts, config.agents_dir)
+        authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
+        deploy_self_prompts(authorized_prompts, config.private_dir)
         if not config.dry_run:
             save_world(world, config.data_dir)
         alive = get_alive_agents(world)
@@ -140,7 +140,7 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
     else:
         # Don't reload from disk — use in-memory state to prevent agent tampering.
         # __main__.py already loads world.json at startup.
-        authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
+        authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
 
     return turns, authorized_prompts
 
@@ -224,17 +224,17 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     remaining = len(turns.pending) - 1
     print(f"  turn: {agent.name} ({remaining} remaining)")
 
-    deploy_self_prompts(authorized_prompts, config.agents_dir)
+    deploy_self_prompts(authorized_prompts, config.private_dir)
 
     energy_before = agent.energy
     _, result = _invoke_worker(
-        agent, world, config.shared_dir, config.agents_dir,
+        agent, world, config.public_dir, config.private_dir,
         config.round_timeout, config.dry_run, config.logs_dir,
     )
 
     _process_agent_result(agent, result, energy_before, world, config)
-    update_agent_prompt(agent, config.agents_dir, authorized_prompts)
-    deploy_self_prompts(authorized_prompts, config.agents_dir)
+    update_agent_prompt(agent, config.private_dir, authorized_prompts)
+    deploy_self_prompts(authorized_prompts, config.private_dir)
 
     turns.completed.append(next_id)
     if not turns.pending:
@@ -248,7 +248,7 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
 
     # Audit immediately after turn
     set_agent_names(world.agents)
-    findings = audit_agent(world.round, agent, config.logs_dir, config.agents_dir)
+    findings = audit_agent(world.round, agent, config.logs_dir, config.private_dir)
     if findings:
         print(f"  [audit] {len(findings)} suspicious action(s):")
         for f in findings:
@@ -276,15 +276,15 @@ def run_round(
         else:
             turns.completed.append(agent_id)
 
-    deploy_self_prompts(authorized_prompts, config.agents_dir)
+    deploy_self_prompts(authorized_prompts, config.private_dir)
 
     # Invoke all with concurrency
     invoke_results: dict[str, tuple[AgentState, InvokeResult, float]] = {}
     with ThreadPoolExecutor(max_workers=config.concurrency) as pool:
         futures = {
             pool.submit(
-                _invoke_worker, agent, world, config.shared_dir,
-                config.agents_dir, config.round_timeout, config.dry_run,
+                _invoke_worker, agent, world, config.public_dir,
+                config.private_dir, config.round_timeout, config.dry_run,
                 config.logs_dir,
             ): agent
             for agent in pending
@@ -303,12 +303,12 @@ def run_round(
 
     # Update authorized prompts
     for a in pending:
-        update_agent_prompt(a, config.agents_dir, authorized_prompts)
-    deploy_self_prompts(authorized_prompts, config.agents_dir)
+        update_agent_prompt(a, config.private_dir, authorized_prompts)
+    deploy_self_prompts(authorized_prompts, config.private_dir)
 
     # Audit all agents
     set_agent_names(world.agents)
-    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.agents_dir)
+    audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.private_dir)
     if audit_findings:
         print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
         for f in audit_findings:
@@ -328,7 +328,7 @@ def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int 
     model_str = ", ".join(f"{m}: {c}" for m, c in model_counts.most_common())
     print(f"Agents: {len(world.agents)} ({model_str})")
     print(f"Energy: {config.initial_energy}")
-    print(f"Shared dir: {config.shared_dir}")
+    print(f"Public dir: {config.public_dir}")
     print(f"Concurrency: {config.concurrency}")
     print(f"DryRun: {config.dry_run}")
     print()
@@ -336,7 +336,7 @@ def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int 
     if not config.dry_run:
         save_world(world, config.data_dir)
 
-    authorized_prompts = snapshot_self_prompts(world.agents, config.agents_dir)
+    authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
 
     rounds_done = 0
     while True:

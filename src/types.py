@@ -109,8 +109,9 @@ class SimulationConfig:
     dry_run: bool = False
     data_dir: str = "data"
     logs_dir: str = "logs"
-    shared_dir: str = "data/shared"
-    agents_dir: str = "data/agents"
+    public_dir: str = "data/public"
+    private_dir: str = "data/private"
+    managed_dir: str = "data/managed"
     energy_reward_count: int = 3
     energy_reward_amount: float = 1.0
     base_metabolism: float = 1.5

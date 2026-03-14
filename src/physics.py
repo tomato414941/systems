@@ -71,7 +71,7 @@ def process_send(
     sender: AgentState,
     request: SendRequest,
     world: WorldState,
-    agents_dir: str,
+    private_dir: str,
     data_dir: str = "",
 ) -> list[WorldEvent]:
     if sender.energy < SEND_COST:
@@ -91,7 +91,7 @@ def process_send(
         add_to_pool("send", SEND_COST, data_dir)
     message = request.message[:500]
 
-    inbox_path = os.path.join(agents_dir, receiver.id, "inbox.md")
+    inbox_path = os.path.join(private_dir, receiver.id, "inbox.md")
     line = f"[R{world.round}] FROM {sender.name}: {message}\n"
     with open(inbox_path, "a") as f:
         f.write(line)
@@ -150,7 +150,7 @@ def process_publish_service(
     request: PublishServiceRequest,
     world: WorldState,
     data_dir: str,
-    agents_dir: str,
+    private_dir: str,
 ) -> list[WorldEvent]:
     if request.price < MIN_SERVICE_PRICE:
         return []
@@ -159,7 +159,7 @@ def process_publish_service(
     if find_service(request.name, data_dir) is not None:
         return []
 
-    source_path = os.path.join(agents_dir, agent.id, request.script)
+    source_path = os.path.join(private_dir, agent.id, request.script)
     installed = install_script(data_dir, request.name, source_path)
     if installed is None:
         return []
@@ -190,7 +190,7 @@ def process_use_service(
     request: UseServiceRequest,
     world: WorldState,
     data_dir: str,
-    agents_dir: str,
+    private_dir: str,
 ) -> list[WorldEvent]:
     from .grid.service import is_builtin_service, handle_grid_service, BUILTIN_SERVICE_PRICE
 
@@ -205,7 +205,7 @@ def process_use_service(
         )
         if energy_gained > 0:
             agent.energy += energy_gained
-        results_dir = os.path.join(agents_dir, agent.id, "service_results")
+        results_dir = os.path.join(private_dir, agent.id, "service_results")
         os.makedirs(results_dir, exist_ok=True)
         result_file = os.path.join(results_dir, f"{request.name}.txt")
         with open(result_file, "w") as f:
@@ -256,7 +256,7 @@ def process_use_service(
 
     provider.energy += entry.price
 
-    results_dir = os.path.join(agents_dir, agent.id, "service_results")
+    results_dir = os.path.join(private_dir, agent.id, "service_results")
     os.makedirs(results_dir, exist_ok=True)
     result_file = os.path.join(results_dir, f"{entry.name}.txt")
     with open(result_file, "w") as f:

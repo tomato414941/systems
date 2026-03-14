@@ -75,9 +75,10 @@ def render_commands_reference() -> str:
     return "\n".join(lines)
 
 
-def write_commands_file(shared_dir: str) -> None:
+def write_commands_file(managed_dir: str, public_dir: str) -> None:
     import os
-    path = os.path.join(shared_dir, "commands.md")
     content = render_commands_reference()
-    with open(path, "w") as f:
-        f.write(content)
+    for d in (managed_dir, public_dir):
+        path = os.path.join(d, "commands.md")
+        with open(path, "w") as f:
+            f.write(content)

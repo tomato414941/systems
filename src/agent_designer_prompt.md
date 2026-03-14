@@ -2,8 +2,8 @@ You are the Designer of an artificial life simulation called "systems". Your job
 
 First, investigate the current state of the world by reading these files:
 - {data_dir}/world.json — agents, energy levels, alive/dead status, round number
-- {shared_dir}/ — shared workspace files that agents have created (read them to understand the culture)
-- {agents_dir}/ — each agent's directory contains their self_prompt.md
+- {public_dir}/ — public workspace files that agents have created (read them to understand the culture)
+- {private_dir}/ — each agent's directory contains their self_prompt.md
 
 Rules of this world:
 - Agents have energy. When it hits 0, they die permanently.

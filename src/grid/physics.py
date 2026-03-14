@@ -96,7 +96,7 @@ def process_send(
     agent: GridAgent,
     request: SendRequest,
     world: GridWorld,
-    agents_dir: str,
+    private_dir: str,
 ) -> list[GridEvent]:
     if agent.energy < SEND_COST:
         return []
@@ -113,7 +113,7 @@ def process_send(
     agent.energy -= SEND_COST
     message = request.message[:500]
 
-    inbox_path = os.path.join(agents_dir, receiver.id, "inbox.md")
+    inbox_path = os.path.join(private_dir, receiver.id, "inbox.md")
     line = f"[R{world.round}] FROM {agent.name}: {message}\n"
     os.makedirs(os.path.dirname(inbox_path), exist_ok=True)
     with open(inbox_path, "a") as f:

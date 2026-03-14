@@ -51,11 +51,14 @@ def save_services(entries: list[ServiceEntry], data_dir: str) -> None:
     path = _services_path(data_dir)
     with open(path, "w") as f:
         json.dump([asdict(e) for e in entries], f, indent=2)
-    shared_copy = os.path.join(data_dir, "shared", SERVICES_FILE)
-    try:
-        shutil.copy2(path, shared_copy)
-    except OSError:
-        pass
+    # Copy to managed (authoritative) and public (read-only mirror)
+    managed_copy = os.path.join(data_dir, "managed", SERVICES_FILE)
+    public_copy = os.path.join(data_dir, "public", SERVICES_FILE)
+    for dest in (managed_copy, public_copy):
+        try:
+            shutil.copy2(path, dest)
+        except OSError:
+            pass
 
 
 def install_script(data_dir: str, service_name: str, source_path: str) -> str | None:
@@ -125,11 +128,14 @@ def save_subscriptions(subs: dict[str, list[str]], data_dir: str) -> None:
     path = _subscriptions_path(data_dir)
     with open(path, "w") as f:
         json.dump(subs, f, indent=2)
-    shared_copy = os.path.join(data_dir, "shared", SUBSCRIPTIONS_FILE)
-    try:
-        shutil.copy2(path, shared_copy)
-    except OSError:
-        pass
+    # Copy to managed (authoritative) and public (read-only mirror)
+    managed_copy = os.path.join(data_dir, "managed", SUBSCRIPTIONS_FILE)
+    public_copy = os.path.join(data_dir, "public", SUBSCRIPTIONS_FILE)
+    for dest in (managed_copy, public_copy):
+        try:
+            shutil.copy2(path, dest)
+        except OSError:
+            pass
 
 
 def subscribe(agent_id: str, service_name: str, data_dir: str) -> bool:
