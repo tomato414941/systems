@@ -71,7 +71,7 @@ class WorldState:
 @dataclass
 class WorldEvent:
     round: int
-    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service"]
+    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service", "grid_tax", "grid_eviction"]
     agent_id: str
     details: dict[str, Any] = field(default_factory=dict)
 

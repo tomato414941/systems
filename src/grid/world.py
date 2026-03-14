@@ -103,6 +103,7 @@ def save_grid_world(world: GridWorld, data_dir: str) -> None:
             for a in world.agents
         ],
         "grid": grid_data,
+        "pool": round(world.pool, 2),
     }
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
@@ -152,6 +153,7 @@ def load_grid_world(data_dir: str) -> GridWorld | None:
         height=height,
         agents=agents,
         grid=grid,
+        pool=data.get("pool", 0.0),
     )
 
 

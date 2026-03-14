@@ -145,6 +145,14 @@ def _finalize_round(
         for event in eval_events:
             log_event(event)
 
+    from .grid.service import collect_participation_tax
+    taxed = collect_participation_tax(config.data_dir, world.agents)
+    for agent_id, amount in taxed:
+        if amount > 0:
+            log_event(WorldEvent(round=world.round, type="grid_tax", agent_id=agent_id, details={"amount": amount}))
+        else:
+            log_event(WorldEvent(round=world.round, type="grid_eviction", agent_id=agent_id, details={"reason": "insufficient_energy"}))
+
     death_events = check_deaths(world)
     for event in death_events:
         log_event(event)

@@ -194,6 +194,8 @@ def process_use_service(
         if agent.energy < BUILTIN_SERVICE_PRICE:
             return []
         agent.energy -= BUILTIN_SERVICE_PRICE
+        from .grid.service import _add_to_pool
+        _add_to_pool(data_dir, BUILTIN_SERVICE_PRICE)
         output, energy_gained = handle_grid_service(
             agent.id, agent.name, request.input, world.round, data_dir,
         )

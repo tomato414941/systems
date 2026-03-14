@@ -41,6 +41,7 @@ class GridWorld:
     height: int
     agents: list[GridAgent]
     grid: list[list[GridCell]]  # grid[y][x]
+    pool: float = 0.0
 
 
 @dataclass

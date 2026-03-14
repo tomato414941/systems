@@ -15,6 +15,42 @@ from .prompt import _render_view, _visible_details, VIEW_RADIUS
 
 BUILTIN_SERVICE_NAME = "grid"
 BUILTIN_SERVICE_PRICE = 0.1
+PARTICIPATION_TAX = 0.1
+
+
+def collect_participation_tax(data_dir: str, world_agents: list) -> list[tuple[str, float]]:
+    """Collect per-round tax from grid participants. Returns [(agent_id, amount)] of taxes collected."""
+    grid_dir = os.path.join(data_dir, "grid")
+    grid_world = load_grid_world(grid_dir)
+    if grid_world is None:
+        return []
+
+    taxed = []
+    main_agents = {a.id: a for a in world_agents if a.alive}
+
+    for g_agent in list(grid_world.agents):
+        if g_agent.id not in main_agents:
+            continue
+        main_agent = main_agents[g_agent.id]
+        if main_agent.energy >= PARTICIPATION_TAX:
+            main_agent.energy -= PARTICIPATION_TAX
+            grid_world.pool += PARTICIPATION_TAX
+            taxed.append((g_agent.id, PARTICIPATION_TAX))
+        else:
+            grid_world.agents.remove(g_agent)
+            taxed.append((g_agent.id, 0.0))
+
+    if taxed:
+        save_grid_world(grid_world, grid_dir)
+    return taxed
+
+
+def _add_to_pool(data_dir: str, amount: float) -> None:
+    grid_dir = os.path.join(data_dir, "grid")
+    grid_world = load_grid_world(grid_dir)
+    if grid_world:
+        grid_world.pool += amount
+        save_grid_world(grid_world, grid_dir)
 
 
 def handle_grid_service(
