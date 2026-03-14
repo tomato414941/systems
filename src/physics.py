@@ -192,14 +192,15 @@ def process_use_service(
     data_dir: str,
     private_dir: str,
 ) -> list[WorldEvent]:
-    from .grid.service import is_builtin_service, handle_grid_service, BUILTIN_SERVICE_PRICE
+    from .grid.service import is_builtin_service as is_grid_service, handle_grid_service, BUILTIN_SERVICE_PRICE as GRID_PRICE
+    from .eval_service import is_evaluator_service, handle_evaluator_service, BUILTIN_SERVICE_PRICE as EVAL_PRICE
 
-    if is_builtin_service(request.name):
-        if agent.energy < BUILTIN_SERVICE_PRICE:
+    if is_grid_service(request.name):
+        if agent.energy < GRID_PRICE:
             return []
-        agent.energy -= BUILTIN_SERVICE_PRICE
+        agent.energy -= GRID_PRICE
         from .grid.service import _add_to_pool
-        _add_to_pool(data_dir, BUILTIN_SERVICE_PRICE)
+        _add_to_pool(data_dir, GRID_PRICE)
         output, energy_gained = handle_grid_service(
             agent.id, agent.name, request.input, world.round, data_dir,
         )
@@ -224,6 +225,32 @@ def process_use_service(
             type="use_service",
             agent_id=agent.id,
             details=details,
+        )]
+
+    if is_evaluator_service(request.name):
+        if agent.energy < EVAL_PRICE:
+            return []
+        if EVAL_PRICE > 0:
+            agent.energy -= EVAL_PRICE
+        output, energy_gained = handle_evaluator_service(
+            agent.id, agent.name, request.input, world.round, data_dir,
+        )
+        results_dir = os.path.join(private_dir, agent.id, "service_results")
+        os.makedirs(results_dir, exist_ok=True)
+        result_file = os.path.join(results_dir, f"{request.name}.txt")
+        with open(result_file, "w") as f:
+            f.write(output)
+        entries = load_services(data_dir)
+        for e in entries:
+            if e.name == request.name:
+                e.call_count += 1
+                break
+        save_services(entries, data_dir)
+        return [WorldEvent(
+            round=world.round,
+            type="use_service",
+            agent_id=agent.id,
+            details={"service": request.name, "success": True, "builtin": True, "price": EVAL_PRICE},
         )]
 
     entry = find_service(request.name, data_dir)

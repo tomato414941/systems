@@ -160,6 +160,11 @@ def _finalize_round(
         for event in eval_events:
             log_event(event)
 
+        from .eval_service import distribute_eval_rewards
+        peer_events = distribute_eval_rewards(world, config.data_dir)
+        for event in peer_events:
+            log_event(event)
+
     from .services import collect_subscription_fees
     sub_results = collect_subscription_fees(world, config.data_dir)
     for agent_id, service_name, amount in sub_results:

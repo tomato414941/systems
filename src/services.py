@@ -96,6 +96,15 @@ BUILTIN_SERVICES = [
         round_published=0,
         subscription_fee=0.1,
     ),
+    ServiceEntry(
+        name="evaluator",
+        provider_id="system",
+        provider_name="Engine",
+        script="",
+        price=0.0,
+        description="Peer evaluation service. Free, 1 vote per round. RATE <agent> [reason] to vote. STATUS to see current tally. 16E budget distributed proportionally at round end. Cannot vote for yourself.",
+        round_published=0,
+    ),
 ]
 
 
