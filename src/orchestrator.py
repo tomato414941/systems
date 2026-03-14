@@ -121,19 +121,21 @@ def _process_agent_result(
 
 def _ensure_round_started(world: WorldState, config: SimulationConfig):
     """Start a new round if no turns exist. Returns (turns, authorized_prompts)."""
-    from .services import ensure_builtin_services
-    ensure_builtin_services(config.data_dir)
-    write_commands_file(config.managed_dir, config.public_dir)
+    if not config.dry_run:
+        from .services import ensure_builtin_services
+        ensure_builtin_services(config.data_dir)
+        write_commands_file(config.managed_dir, config.public_dir)
 
     turns = load_turns(config.data_dir)
 
     if turns is None:
         world.round += 1
         turns = create_turns(world)
-        save_turns(turns, config.data_dir)
-        authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
-        deploy_self_prompts(authorized_prompts, config.private_dir)
         if not config.dry_run:
+            save_turns(turns, config.data_dir)
+        authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
+        if not config.dry_run:
+            deploy_self_prompts(authorized_prompts, config.private_dir)
             save_world(world, config.data_dir)
         alive = get_alive_agents(world)
         print(f"\n=== Round {world.round} ({len(alive)} alive) ===", flush=True)
