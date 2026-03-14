@@ -239,6 +239,7 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     turns.completed.append(next_id)
     if not turns.pending:
         turns.phase = "finalize"
+        print(f"  All agents done. Run --turn again to finalize round.")
     save_turns(turns, config.data_dir)
     if not config.dry_run:
         save_world(world, config.data_dir)
