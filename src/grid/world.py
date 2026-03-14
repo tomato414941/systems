@@ -14,9 +14,9 @@ def create_grid_world(
     height: int = 16,
     agent_count: int = 4,
     initial_energy: float = 8.0,
-    resource_density: float = 0.35,
-    resource_max: float = 5.0,
-    regen_rate: float = 0.5,
+    resource_density: float = 0.05,
+    resource_max: float = 2.0,
+    regen_rate: float = 0.05,
     invoker: str = "claude",
     claude_model: str = "claude-sonnet-4-6",
     codex_model: str = "gpt-5.3-codex",
@@ -26,7 +26,7 @@ def create_grid_world(
     for y in range(height):
         for x in range(width):
             if random.random() < resource_density:
-                max_amt = round(random.uniform(1.0, resource_max), 1)
+                max_amt = round(random.uniform(0.5, resource_max), 1)
                 grid[y][x].resource = Resource(
                     amount=max_amt,
                     max_amount=max_amt,

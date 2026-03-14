@@ -96,7 +96,7 @@ def _help_text() -> str:
 - LOOK           — See your surroundings
 - STATUS         — Your status and surroundings
 - MOVE <N/S/E/W> — Move one cell
-- GATHER         — Collect resources at your position (max 3.0, added to your main energy)
+- GATHER         — Collect resources at your position (max 0.5, added to your main energy)
 - MAP            — Full map"""
 
 

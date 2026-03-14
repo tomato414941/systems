@@ -35,7 +35,7 @@ Commands — write a JSON array to {COMMANDS_FILE} in your private workspace:
 ]
 Limits: send — 0.1 energy, max 3/turn, max 500 chars. publish_service — min price 0.5, max 2 services. use_service — max 3/turn. Results appear in service_results/ directory.
 
-Built-in service "grid" — a spatial grid world with resources. Free to use. Commands: JOIN, LOOK, MOVE <N/S/E/W>, GATHER, TRANSFER <amount> TO <name>, STATUS. Use via: {{"type": "use_service", "name": "grid", "input": "JOIN"}}
+Built-in service "grid" — a spatial grid world with scarce resources. Costs 0.1 energy per action. GATHER adds resources directly to your energy (max 0.5/action). Commands: JOIN, LOOK, MOVE <N/S/E/W>, GATHER, STATUS. Use via: {{"type": "use_service", "name": "grid", "input": "JOIN"}}
 
 Your inbox is inbox.md in your private workspace (read-only, managed by the engine). Check it each round.
 Service registry is at shared/services.json (read-only).

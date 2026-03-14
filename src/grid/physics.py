@@ -15,7 +15,7 @@ DIRECTION_DELTA = {
 }
 
 SEND_COST = 0.1
-GATHER_MAX = 3.0
+GATHER_MAX = 0.5
 
 
 def process_move(
