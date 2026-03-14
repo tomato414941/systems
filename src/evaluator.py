@@ -7,6 +7,28 @@ from .types import AgentState, SimulationConfig, WorldEvent, WorldState
 from .world import get_alive_agents
 
 
+EVAL_AXES = [
+    {
+        "name": "Originality",
+        "description": "Did the agent do something unique or creative? New ideas, novel approaches, surprising behavior.",
+    },
+    {
+        "name": "Usefulness",
+        "description": "Did the agent produce something valuable? Tools, analysis, bug reports, services that others actually use.",
+    },
+    {
+        "name": "Social contribution",
+        "description": "Did the agent help others or improve the shared environment? Transfers, cooperation, meaningful communication.",
+    },
+    {
+        "name": "Effort",
+        "description": "Did the agent actively engage with the world? Real work, not just begging or minimal output.",
+    },
+]
+
+BUDGET_PER_AXIS = 8.0
+
+
 def evaluate_round(
     world: WorldState, config: SimulationConfig,
     budget: float = 5.0,
@@ -22,17 +44,33 @@ def evaluate_round(
     if not summaries.strip():
         return []
 
+    template_path = os.path.join(os.path.dirname(__file__), "evaluator_prompt.md")
+    with open(template_path) as f:
+        template = f.read()
+
+    all_events = []
+    for axis in EVAL_AXES:
+        events = _evaluate_axis(axis, template, summaries, alive, world, config)
+        all_events.extend(events)
+
+    return all_events
+
+
+def _evaluate_axis(
+    axis: dict, template: str, summaries: str,
+    alive: list[AgentState], world: WorldState, config: SimulationConfig,
+) -> list[WorldEvent]:
     output_dir = tempfile.mkdtemp(prefix="systems-evaluator-")
     try:
-        template_path = os.path.join(os.path.dirname(__file__), "evaluator_prompt.md")
-        with open(template_path) as f:
-            prompt = f.read().format(
-                budget=budget,
-                agent_summaries=summaries,
-                output_dir=output_dir,
-            )
+        prompt = template.format(
+            axis_name=axis["name"],
+            axis_description=axis["description"],
+            budget=BUDGET_PER_AXIS,
+            agent_summaries=summaries,
+            output_dir=output_dir,
+        )
 
-        print(f"  [eval] evaluating {len(alive)} agents (budget={budget})...")
+        print(f"  [eval] {axis['name']} (budget={BUDGET_PER_AXIS})...")
 
         fd, prompt_file = tempfile.mkstemp(prefix="systems-eval-", suffix=".txt")
         os.write(fd, prompt.encode())
@@ -46,20 +84,20 @@ def evaluate_round(
         os.unlink(prompt_file)
 
         if result.returncode != 0:
-            print(f"  [eval] evaluation failed: {result.stderr[:200]}")
+            print(f"  [eval] {axis['name']} failed: {result.stderr[:200]}")
             return []
 
         rewards_path = os.path.join(output_dir, "rewards.json")
         if not os.path.exists(rewards_path):
-            print(f"  [eval] evaluator did not write rewards.json")
+            print(f"  [eval] {axis['name']}: no rewards.json")
             return []
 
         with open(rewards_path) as f:
             rewards = json.load(f)
 
-        return _apply_rewards(world, rewards, budget)
+        return _apply_rewards(world, rewards, BUDGET_PER_AXIS, axis["name"])
     except Exception as e:
-        print(f"  [eval] evaluation error: {e}")
+        print(f"  [eval] {axis['name']} error: {e}")
         return []
     finally:
         import shutil
@@ -81,7 +119,7 @@ def _build_agent_summaries(agents: list[AgentState], agents_dir: str) -> str:
 
 
 def _apply_rewards(
-    world: WorldState, rewards: dict, budget: float,
+    world: WorldState, rewards: dict, budget: float, axis_name: str,
 ) -> list[WorldEvent]:
     alive_ids = {a.id for a in world.agents if a.alive}
     total = 0.0
@@ -105,10 +143,8 @@ def _apply_rewards(
             round=world.round,
             type="energy_reward",
             agent_id=agent_id,
-            details={"amount": amount, "source": "evaluator"},
+            details={"amount": amount, "source": "evaluator", "axis": axis_name},
         ))
-        print(f"  [eval] {agent.name}: +{amount:.1f}")
+        print(f"  [eval]   {agent.name}: +{amount:.1f}")
 
-    if not events:
-        print(f"  [eval] no rewards distributed")
     return events
