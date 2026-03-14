@@ -7,7 +7,7 @@ import tempfile
 from .types import (
     AgentState, AgentCommands, SendRequest, TransferRequest,
     PublishServiceRequest, UseServiceRequest, UnpublishServiceRequest,
-    UpdateServiceRequest, WorldState,
+    UpdateServiceRequest, SubscribeRequest, UnsubscribeRequest, WorldState,
 )
 from .prompt import build_full_prompt, COMMANDS_FILE
 from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
@@ -170,6 +170,18 @@ def _parse_json_commands(raw: str) -> AgentCommands:
         elif cmd_type == "unpublish_service":
             try:
                 cmds.unpublish.append(UnpublishServiceRequest(name=str(entry["name"])))
+            except KeyError:
+                pass
+
+        elif cmd_type == "subscribe":
+            try:
+                cmds.subscribe.append(SubscribeRequest(name=str(entry["name"])))
+            except KeyError:
+                pass
+
+        elif cmd_type == "unsubscribe":
+            try:
+                cmds.unsubscribe.append(UnsubscribeRequest(name=str(entry["name"])))
             except KeyError:
                 pass
 

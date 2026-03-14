@@ -80,6 +80,17 @@ def _process_agent_result(
     for update_req in cmds.update:
         all_events.extend(process_update_service(agent, update_req, world, config.data_dir))
 
+    for sub_req in cmds.subscribe:
+        from .services import subscribe, find_service
+        entry = find_service(sub_req.name, config.data_dir)
+        if entry and subscribe(agent.id, sub_req.name, config.data_dir):
+            all_events.append(WorldEvent(round=world.round, type="subscribe", agent_id=agent.id, details={"service": sub_req.name}))
+
+    for unsub_req in cmds.unsubscribe:
+        from .services import unsubscribe
+        if unsubscribe(agent.id, unsub_req.name, config.data_dir):
+            all_events.append(WorldEvent(round=world.round, type="unsubscribe", agent_id=agent.id, details={"service": unsub_req.name}))
+
     for use_req in cmds.use:
         if agent.energy <= 0:
             break
@@ -145,13 +156,13 @@ def _finalize_round(
         for event in eval_events:
             log_event(event)
 
-    from .grid.service import collect_participation_tax
-    taxed = collect_participation_tax(config.data_dir, world.agents)
-    for agent_id, amount in taxed:
+    from .services import collect_subscription_fees
+    sub_results = collect_subscription_fees(world, config.data_dir)
+    for agent_id, service_name, amount in sub_results:
         if amount > 0:
-            log_event(WorldEvent(round=world.round, type="grid_tax", agent_id=agent_id, details={"amount": amount}))
+            log_event(WorldEvent(round=world.round, type="subscription_fee", agent_id=agent_id, details={"service": service_name, "amount": amount}))
         else:
-            log_event(WorldEvent(round=world.round, type="grid_eviction", agent_id=agent_id, details={"reason": "insufficient_energy"}))
+            log_event(WorldEvent(round=world.round, type="unsubscribe", agent_id=agent_id, details={"service": service_name, "reason": "insufficient_energy"}))
 
     death_events = check_deaths(world)
     for event in death_events:

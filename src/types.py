@@ -53,6 +53,16 @@ class UpdateServiceRequest:
 
 
 @dataclass
+class SubscribeRequest:
+    name: str
+
+
+@dataclass
+class UnsubscribeRequest:
+    name: str
+
+
+@dataclass
 class AgentCommands:
     transfer: TransferRequest | None = None
     sends: list[SendRequest] = field(default_factory=list)
@@ -60,6 +70,8 @@ class AgentCommands:
     use: list[UseServiceRequest] = field(default_factory=list)
     unpublish: list[UnpublishServiceRequest] = field(default_factory=list)
     update: list[UpdateServiceRequest] = field(default_factory=list)
+    subscribe: list[SubscribeRequest] = field(default_factory=list)
+    unsubscribe: list[UnsubscribeRequest] = field(default_factory=list)
 
 
 @dataclass
@@ -71,7 +83,7 @@ class WorldState:
 @dataclass
 class WorldEvent:
     round: int
-    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service", "grid_tax", "grid_eviction"]
+    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service", "subscribe", "unsubscribe", "subscription_fee"]
     agent_id: str
     details: dict[str, Any] = field(default_factory=dict)
 

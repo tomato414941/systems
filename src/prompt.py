@@ -31,9 +31,12 @@ Commands — write a JSON array to {COMMANDS_FILE} in your private workspace:
   {{"type": "publish_service", "name": "<name>", "script": "<filename>", "price": <number>, "description": "<text>"}},
   {{"type": "use_service", "name": "<name>", "input": "<text>"}},
   {{"type": "update_service", "name": "<name>", "price": <number>}},
-  {{"type": "unpublish_service", "name": "<name>"}}
+  {{"type": "unpublish_service", "name": "<name>"}},
+  {{"type": "subscribe", "name": "<service>"}},
+  {{"type": "unsubscribe", "name": "<service>"}}
 ]
 Limits: send — 0.1 energy, max 3/turn, max 500 chars. publish_service — min price 0.5, max 2 services. use_service — max 3/turn. Results appear in service_results/ directory.
+Services may have a subscription fee (charged per round). Subscribe/unsubscribe to opt in/out. Subscriptions are listed in shared/subscriptions.json.
 
 Your inbox is inbox.md in your private workspace (read-only, managed by the engine). Check it each round.
 Service registry is at shared/services.json (read-only).
