@@ -231,7 +231,8 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     remaining = len(turns.pending) - 1
     print(f"  turn: {agent.name} ({remaining} remaining)")
 
-    deploy_self_prompts(authorized_prompts, config.private_dir)
+    if not config.dry_run:
+        deploy_self_prompts(authorized_prompts, config.private_dir)
 
     energy_before = agent.energy
     _, result = _invoke_worker(
@@ -240,14 +241,16 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     )
 
     _process_agent_result(agent, result, energy_before, world, config)
-    update_agent_prompt(agent, config.private_dir, authorized_prompts)
-    deploy_self_prompts(authorized_prompts, config.private_dir)
+    if not config.dry_run:
+        update_agent_prompt(agent, config.private_dir, authorized_prompts)
+        deploy_self_prompts(authorized_prompts, config.private_dir)
 
     turns.completed.append(next_id)
     if not turns.pending:
         turns.phase = "finalize"
         print(f"  All agents done. Run --turn again to finalize round.")
-    save_turns(turns, config.data_dir)
+    if not config.dry_run:
+        save_turns(turns, config.data_dir)
     if not config.dry_run:
         save_world(world, config.data_dir)
 

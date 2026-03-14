@@ -40,7 +40,7 @@ def evaluate_round(
     if not alive:
         return []
 
-    summaries = _build_agent_summaries(alive, config.private_dir)
+    summaries = _build_agent_summaries(alive, config.private_dir, config.logs_dir, world.round)
     if not summaries.strip():
         return []
 
@@ -104,18 +104,56 @@ def _evaluate_axis(
         shutil.rmtree(output_dir, ignore_errors=True)
 
 
-def _build_agent_summaries(agents: list[AgentState], private_dir: str) -> str:
+def _build_agent_summaries(agents: list[AgentState], private_dir: str, logs_dir: str = "", round_num: int = 0) -> str:
+    action_log = _load_round_actions(logs_dir, round_num) if logs_dir else {}
     lines = []
     for a in agents:
-        msg_path = os.path.join(private_dir, a.id, "agent_to_human.md")
-        msg = ""
-        if os.path.exists(msg_path):
-            with open(msg_path) as f:
-                msg = f.read().strip()
-        if not msg:
-            msg = "(no message)"
-        lines.append(f"### {a.name} ({a.id}), E={a.energy:.1f}\n{msg}\n")
+        actions = action_log.get(a.id, [])
+        if actions:
+            action_str = "; ".join(actions)
+        else:
+            action_str = "no actions"
+        lines.append(f"### {a.name} ({a.id}), E={a.energy:.1f}\nActions: {action_str}\n")
     return "\n".join(lines)
+
+
+def _load_round_actions(logs_dir: str, round_num: int) -> dict[str, list[str]]:
+    path = os.path.join(logs_dir, "rounds.jsonl")
+    if not os.path.exists(path):
+        return {}
+    actions: dict[str, list[str]] = {}
+    with open(path) as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            events = entry.get("events", [])
+            if not events or events[0].get("round") != round_num:
+                continue
+            agent_id = entry.get("agent_id", "")
+            cmds = entry.get("commands", {})
+            parts = []
+            t = cmds.get("transfer")
+            if t:
+                parts.append(f"TRANSFER {t['amount']} → {t['to']}")
+            for s in cmds.get("sends", []):
+                parts.append(f"send_message → {s['to']}: {s['message'][:80]}")
+            for p in cmds.get("publish", []):
+                parts.append(f"publish_service: {p['name']}")
+            for u in cmds.get("use", []):
+                parts.append(f"use_service: {u['name']} ({u.get('input', '')[:50]})")
+            for up in cmds.get("update", []):
+                parts.append(f"update_service: {up['name']}")
+            for un in cmds.get("unpublish", []):
+                parts.append(f"unpublish_service: {un['name']}")
+            for sub in cmds.get("subscribe", []):
+                parts.append(f"subscribe: {sub['name']}")
+            for unsub in cmds.get("unsubscribe", []):
+                parts.append(f"unsubscribe: {unsub['name']}")
+            if parts:
+                actions[agent_id] = parts
+    return actions
 
 
 def _apply_rewards(
