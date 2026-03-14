@@ -188,6 +188,32 @@ def process_use_service(
     data_dir: str,
     agents_dir: str,
 ) -> list[WorldEvent]:
+    from .grid.service import is_builtin_service, handle_grid_service, BUILTIN_SERVICE_PRICE
+
+    if is_builtin_service(request.name):
+        if agent.energy < BUILTIN_SERVICE_PRICE:
+            return []
+        agent.energy -= BUILTIN_SERVICE_PRICE
+        output, energy_gained = handle_grid_service(
+            agent.id, agent.name, request.input, world.round, data_dir,
+        )
+        if energy_gained > 0:
+            agent.energy += energy_gained
+        results_dir = os.path.join(agents_dir, agent.id, "service_results")
+        os.makedirs(results_dir, exist_ok=True)
+        result_file = os.path.join(results_dir, f"{request.name}.txt")
+        with open(result_file, "w") as f:
+            f.write(output)
+        details = {"service": request.name, "success": True, "builtin": True, "price": BUILTIN_SERVICE_PRICE}
+        if energy_gained > 0:
+            details["energy_gained"] = energy_gained
+        return [WorldEvent(
+            round=world.round,
+            type="use_service",
+            agent_id=agent.id,
+            details=details,
+        )]
+
     entry = find_service(request.name, data_dir)
     if entry is None:
         return []
