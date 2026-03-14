@@ -210,6 +210,12 @@ def process_use_service(
         result_file = os.path.join(results_dir, f"{request.name}.txt")
         with open(result_file, "w") as f:
             f.write(output)
+        entries = load_services(data_dir)
+        for e in entries:
+            if e.name == request.name:
+                e.call_count += 1
+                break
+        save_services(entries, data_dir)
         details = {"service": request.name, "success": True, "builtin": True, "price": BUILTIN_SERVICE_PRICE}
         if energy_gained > 0:
             details["energy_gained"] = energy_gained
