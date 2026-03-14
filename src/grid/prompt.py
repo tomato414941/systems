@@ -105,7 +105,7 @@ Write a JSON array to {COMMANDS_FILE}. One action per turn (move OR gather OR tr
   {{"type": "send", "to": "<name-or-id>", "message": "<text>"}}
 
 - MOVE: move 1 cell in the given direction. Hitting a wall does nothing.
-- GATHER: collect resources at your current position (up to 3.0 per turn). Resources regenerate over time.
+- GATHER: collect resources at your current position (up to 5.0 per turn). Resources regenerate over time.
 - TRANSFER: give energy to an adjacent agent (Manhattan distance 1).
 - SEND: deliver a message to any agent's inbox. Costs 0.1 energy. Max 3 per turn. Max 500 chars.
 
