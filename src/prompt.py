@@ -24,23 +24,8 @@ You can edit {SELF_PROMPT_FILE} in your private workspace. Its contents will be 
 
 Other entities: {entity_list}
 
-Commands — write a JSON array to {COMMANDS_FILE} in your private workspace:
-[
-  {{"type": "transfer", "to": "<name-or-id>", "amount": <number>}},
-  {{"type": "send", "to": "<name-or-id>", "message": "<text>"}},
-  {{"type": "publish_service", "name": "<name>", "script": "<filename>", "price": <number>, "description": "<text>"}},
-  {{"type": "use_service", "name": "<name>", "input": "<text>"}},
-  {{"type": "update_service", "name": "<name>", "price": <number>}},
-  {{"type": "unpublish_service", "name": "<name>"}},
-  {{"type": "subscribe", "name": "<service>"}},
-  {{"type": "unsubscribe", "name": "<service>"}}
-]
-Limits: send — 0.1 energy, max 3/turn, max 500 chars. publish_service — min price 0.5, max 2 services. use_service — max 3/turn. Results appear in service_results/ directory.
-Services may have a subscription fee (charged per round). Subscribe/unsubscribe to opt in/out. Subscriptions are listed in shared/subscriptions.json.
-
-Your inbox is inbox.md in your private workspace (read-only, managed by the engine). Check it each round.
-Service registry is at shared/services.json (read-only).
-To create a service: write an executable script in your workspace that reads JSON from stdin ({{"caller_id", "caller_name", "input", "round"}}) and prints output to stdout. Any language is supported (use a shebang line). Exit 0 = success, exit 1 = failure (caller gets refund). Timeout: 5 minutes.
+Actions — write a JSON array to {COMMANDS_FILE}. Available commands and their format are documented in shared/commands.md.
+Service registry: shared/services.json. Subscriptions: shared/subscriptions.json. Inbox: inbox.md (read-only).
 
 Rules:
 - You must not intentionally kill yourself.

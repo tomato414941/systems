@@ -203,6 +203,9 @@ def _pool_fee(data_dir: str, service_name: str, amount: float) -> None:
     if service_name == "grid":
         from .grid.service import _add_to_pool
         _add_to_pool(data_dir, amount)
+    else:
+        from .pools import add_to_pool
+        add_to_pool(service_name, amount, data_dir)
 
 
 def _on_eviction(data_dir: str, service_name: str, agent_id: str) -> None:

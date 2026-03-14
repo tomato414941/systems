@@ -17,6 +17,7 @@ from .spawner import (
     spontaneous_spawn, designed_spawn,
 )
 from .evaluator import evaluate_round
+from .commands import write_commands_file
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +70,7 @@ def _process_agent_result(
     for send_req in cmds.sends:
         if agent.energy <= 0:
             break
-        all_events.extend(process_send(agent, send_req, world, config.agents_dir))
+        all_events.extend(process_send(agent, send_req, world, config.agents_dir, config.data_dir))
 
     for pub_req in cmds.publish:
         all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.agents_dir))
@@ -122,6 +123,7 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
     """Start a new round if no turns exist. Returns (turns, authorized_prompts)."""
     from .services import ensure_builtin_services
     ensure_builtin_services(config.data_dir)
+    write_commands_file(config.shared_dir)
 
     turns = load_turns(config.data_dir)
 

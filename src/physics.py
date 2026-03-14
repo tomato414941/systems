@@ -13,6 +13,7 @@ from .services import (
     ServiceEntry, MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT,
 )
 from .sandbox import run_service_script
+from .pools import add_to_pool
 
 
 def consume_energy(agent: AgentState, round_num: int, cost_usd: float = 0.0, base_metabolism: float = 0.0) -> list[WorldEvent]:
@@ -71,6 +72,7 @@ def process_send(
     request: SendRequest,
     world: WorldState,
     agents_dir: str,
+    data_dir: str = "",
 ) -> list[WorldEvent]:
     if sender.energy < SEND_COST:
         return []
@@ -85,6 +87,8 @@ def process_send(
         return []
 
     sender.energy -= SEND_COST
+    if data_dir:
+        add_to_pool("send", SEND_COST, data_dir)
     message = request.message[:500]
 
     inbox_path = os.path.join(agents_dir, receiver.id, "inbox.md")

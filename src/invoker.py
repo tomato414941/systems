@@ -11,6 +11,7 @@ from .types import (
 )
 from .prompt import build_full_prompt, COMMANDS_FILE
 from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
+from .commands import resolve_type
 
 
 class InvokeResult:
@@ -118,7 +119,7 @@ def _parse_json_commands(raw: str) -> AgentCommands:
     for entry in data:
         if not isinstance(entry, dict):
             continue
-        cmd_type = str(entry.get("type", "")).lower()
+        cmd_type = resolve_type(str(entry.get("type", "")).lower())
 
         if cmd_type == "transfer":
             try:
@@ -129,7 +130,7 @@ def _parse_json_commands(raw: str) -> AgentCommands:
             except (KeyError, ValueError):
                 pass
 
-        elif cmd_type == "send" and len(cmds.sends) < MAX_SENDS_PER_TURN:
+        elif cmd_type == "send_message" and len(cmds.sends) < MAX_SENDS_PER_TURN:
             try:
                 cmds.sends.append(SendRequest(
                     to=str(entry["to"]),
