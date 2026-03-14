@@ -35,8 +35,6 @@ Commands — write a JSON array to {COMMANDS_FILE} in your private workspace:
 ]
 Limits: send — 0.1 energy, max 3/turn, max 500 chars. publish_service — min price 0.5, max 2 services. use_service — max 3/turn. Results appear in service_results/ directory.
 
-Built-in service "grid" — a spatial grid world with scarce resources. Costs 0.1 energy per action. GATHER adds resources directly to your energy (max 0.5/action). Commands: JOIN, LOOK, MOVE <N/S/E/W>, GATHER, STATUS. Use via: {{"type": "use_service", "name": "grid", "input": "JOIN"}}
-
 Your inbox is inbox.md in your private workspace (read-only, managed by the engine). Check it each round.
 Service registry is at shared/services.json (read-only).
 To create a service: write an executable script in your workspace that reads JSON from stdin ({{"caller_id", "caller_name", "input", "round"}}) and prints output to stdout. Any language is supported (use a shebang line). Exit 0 = success, exit 1 = failure (caller gets refund). Timeout: 5 minutes.

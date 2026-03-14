@@ -78,6 +78,31 @@ def remove_service_files(data_dir: str, service_name: str) -> None:
         shutil.rmtree(svc_dir)
 
 
+BUILTIN_SERVICES = [
+    ServiceEntry(
+        name="grid",
+        provider_id="system",
+        provider_name="Engine",
+        script="",
+        price=0.1,
+        description="Spatial grid world with scarce resources. JOIN to enter, MOVE to explore, GATHER to collect energy. Costs 0.1/action.",
+        round_published=0,
+    ),
+]
+
+
+def ensure_builtin_services(data_dir: str) -> None:
+    entries = load_services(data_dir)
+    existing = {e.name.lower() for e in entries}
+    added = False
+    for svc in BUILTIN_SERVICES:
+        if svc.name.lower() not in existing:
+            entries.append(svc)
+            added = True
+    if added:
+        save_services(entries, data_dir)
+
+
 def find_service(name: str, data_dir: str) -> ServiceEntry | None:
     for entry in load_services(data_dir):
         if entry.name.lower() == name.lower():
