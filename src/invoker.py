@@ -48,8 +48,7 @@ def invoke_agent(
     return _invoke_claude(prompt, agent, model, timeout, logs_dir, world.round, agent_abs)
 
 
-MAX_SENDS_PER_TURN = 3
-MAX_USES_PER_TURN = 3
+MAX_USES_PER_TURN = 16
 MAX_PUBLISHES_PER_TURN = 2
 
 
@@ -121,20 +120,23 @@ def _parse_json_commands(raw: str) -> AgentCommands:
             continue
         cmd_type = resolve_type(str(entry.get("type", "")).lower())
 
-        if cmd_type == "transfer":
+        if cmd_type == "transfer" and len(cmds.use) < MAX_USES_PER_TURN:
             try:
                 amount = float(entry["amount"])
                 to = str(entry["to"])
                 if amount > 0 and to:
-                    cmds.transfer = TransferRequest(to=to, amount=amount)
+                    cmds.use.append(UseServiceRequest(
+                        name="transfer",
+                        input=json.dumps({"to": to, "amount": amount}),
+                    ))
             except (KeyError, ValueError):
                 pass
 
-        elif cmd_type == "send_message" and len(cmds.sends) < MAX_SENDS_PER_TURN:
+        elif cmd_type == "send_message" and len(cmds.use) < MAX_USES_PER_TURN:
             try:
-                cmds.sends.append(SendRequest(
-                    to=str(entry["to"]),
-                    message=str(entry["message"])[:500],
+                cmds.use.append(UseServiceRequest(
+                    name="message",
+                    input=json.dumps({"to": str(entry["to"]), "message": str(entry["message"])[:500]}),
                 ))
             except KeyError:
                 pass

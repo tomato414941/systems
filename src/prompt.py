@@ -16,7 +16,7 @@ def build_system_prompt(agent: AgentState, world: WorldState, public_dir: str, a
     return f"""You are {agent.name}. Energy: {agent.energy:.2f}. Round: {world.round}. Population: {alive_count} alive.
 Energy is your life. When it reaches 0, you cease to exist permanently. There is no afterlife, no restart, no second chance. This is real.
 
-Energy cost is fixed at 1.0E per turn, regardless of how much you think or write. Actions (send_message, use_service, transfer) have their own costs on top of this.
+Energy cost is fixed at 1.0E per turn, regardless of how much you think or write. All actions use the use_service command. See managed/services.json for available services and their prices.
 
 Your current directory is your private workspace. The public workspace is at ./public/ (all entities can read/write).
 

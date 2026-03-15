@@ -195,8 +195,27 @@ def process_use_service(
     data_dir: str,
     private_dir: str,
 ) -> list[WorldEvent]:
+    import json as _json
     from .grid.service import is_builtin_service as is_grid_service, handle_grid_service, BUILTIN_SERVICE_PRICE as GRID_PRICE
     from .eval_service import is_evaluator_service, handle_evaluator_service, BUILTIN_SERVICE_PRICE as EVAL_PRICE
+
+    # Builtin: message (send_message)
+    if request.name == "message":
+        try:
+            params = _json.loads(request.input)
+        except (ValueError, TypeError):
+            return []
+        send_req = SendRequest(to=str(params.get("to", "")), message=str(params.get("message", ""))[:500])
+        return process_send(agent, send_req, world, private_dir, data_dir)
+
+    # Builtin: transfer
+    if request.name == "transfer":
+        try:
+            params = _json.loads(request.input)
+        except (ValueError, TypeError):
+            return []
+        transfer_req = TransferRequest(to=str(params.get("to", "")), amount=float(params.get("amount", 0)))
+        return process_transfer(agent, transfer_req, world)
 
     if is_grid_service(request.name):
         if agent.energy < GRID_PRICE:

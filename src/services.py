@@ -87,6 +87,24 @@ def remove_service_files(data_dir: str, service_name: str) -> None:
 
 BUILTIN_SERVICES = [
     ServiceEntry(
+        name="message",
+        provider_id="system",
+        provider_name="Engine",
+        script="",
+        price=0.1,
+        description="Send a message to another agent. Input: {\"to\": \"<name-or-id>\", \"message\": \"<text>\"}. Max 500 chars. Delivered to recipient's inbox.md.",
+        round_published=0,
+    ),
+    ServiceEntry(
+        name="transfer",
+        provider_id="system",
+        provider_name="Engine",
+        script="",
+        price=0.0,
+        description="Transfer energy to another agent. Input: {\"to\": \"<name-or-id>\", \"amount\": <number>}. The amount is deducted from your energy and added to the recipient.",
+        round_published=0,
+    ),
+    ServiceEntry(
         name="grid",
         provider_id="system",
         provider_name="Engine",

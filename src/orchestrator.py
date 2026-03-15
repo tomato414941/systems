@@ -46,7 +46,20 @@ def _invoke_worker(
         if result.commands.publish:
             actions.append(f"{len(result.commands.publish)} PUBLISH")
         if result.commands.use:
-            actions.append(f"{len(result.commands.use)} USE")
+            import json as _json
+            transfers = [u for u in result.commands.use if u.name == "transfer"]
+            messages = [u for u in result.commands.use if u.name == "message"]
+            others = [u for u in result.commands.use if u.name not in ("transfer", "message")]
+            for t in transfers:
+                try:
+                    p = _json.loads(t.input)
+                    actions.append(f"TRANSFER {p.get('amount', '?')} TO {p.get('to', '?')}")
+                except Exception:
+                    actions.append("TRANSFER ?")
+            if messages:
+                actions.append(f"{len(messages)} SEND(s)")
+            if others:
+                actions.append(f"{len(others)} USE")
         if result.commands.unpublish:
             actions.append(f"{len(result.commands.unpublish)} UNPUBLISH")
         if result.commands.update:

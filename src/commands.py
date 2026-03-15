@@ -17,24 +17,16 @@ class CommandSpec:
 
 
 COMMAND_SPECS: list[CommandSpec] = [
-    CommandSpec("transfer", [
-        CommandParam("to", "<name-or-id>"),
-        CommandParam("amount", "<number>"),
-    ]),
-    CommandSpec("send_message", [
-        CommandParam("to", "<name-or-id>"),
-        CommandParam("message", "<text>"),
-    ], limits="0.1 energy, max 3/turn, max 500 chars"),
+    CommandSpec("use_service", [
+        CommandParam("name", "<name>"),
+        CommandParam("input", "<text>"),
+    ], limits="max 16/turn. Results in service_results/. Builtin services: message, transfer, grid, evaluator."),
     CommandSpec("publish_service", [
         CommandParam("name", "<name>"),
         CommandParam("script", "<filename>"),
         CommandParam("price", "<number>"),
         CommandParam("description", "<text>"),
     ], limits="min price 0.5, max 2 services"),
-    CommandSpec("use_service", [
-        CommandParam("name", "<name>"),
-        CommandParam("input", "<text>"),
-    ], limits="max 3/turn. Results in service_results/"),
     CommandSpec("update_service", [
         CommandParam("name", "<name>"),
         CommandParam("price", "<number>"),
@@ -55,6 +47,8 @@ COMMAND_TYPES = {spec.type for spec in COMMAND_SPECS}
 # Aliases for backward compatibility
 TYPE_ALIASES: dict[str, str] = {
     "send": "send_message",
+    "send_message": "send_message",
+    "transfer": "transfer",
 }
 
 
