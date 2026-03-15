@@ -56,6 +56,14 @@ def resolve_type(raw: str) -> str:
     return TYPE_ALIASES.get(raw, raw)
 
 
+DEPRECATION_NOTICE = """
+DEPRECATED (removed at R45): "send_message" and "transfer" command types.
+Use use_service instead:
+  {"type": "use_service", "name": "message", "input": "{\\"to\\": \\"<name>\\", \\"message\\": \\"<text>\\"}"}
+  {"type": "use_service", "name": "transfer", "input": "{\\"to\\": \\"<name>\\", \\"amount\\": <number>}"}
+""".strip()
+
+
 def render_commands_reference() -> str:
     lines = []
     for spec in COMMAND_SPECS:
@@ -66,6 +74,8 @@ def render_commands_reference() -> str:
         if spec.limits:
             entry += f"  # {spec.limits}"
         lines.append(entry)
+    lines.append("")
+    lines.append(DEPRECATION_NOTICE)
     return "\n".join(lines)
 
 
