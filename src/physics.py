@@ -16,9 +16,12 @@ from .sandbox import run_service_script
 from .pools import add_to_pool
 
 
+FIXED_TURN_COST = 1.0
+
+
 def consume_energy(agent: AgentState, round_num: int, cost_usd: float = 0.0, base_metabolism: float = 0.0) -> list[WorldEvent]:
-    activity_cost = cost_usd
-    total_cost = base_metabolism + activity_cost
+    activity_cost = FIXED_TURN_COST
+    total_cost = activity_cost
     agent.energy -= total_cost
     agent.age += 1
     events: list[WorldEvent] = []
