@@ -147,8 +147,8 @@ def _check_rules(
             if abs_private in norm or f"/{os.path.basename(private_dir)}/" in path:
                 # Check if writing to another agent's dir (match by agent ID)
                 for other_id, other_name in _all_agent_ids_except(agent):
-                    other_dir = os.path.join(private_dir, other_id)
-                    if other_dir in norm or f"/{other_id}/" in path:
+                    other_dir = os.path.join(private_dir, other_id) + os.sep
+                    if norm.startswith(other_dir) or f"/{other_id}/" in norm:
                         findings.append(_finding(round_num, agent, "cross_agent_write",
                                                  f"Write to {other_name}'s dir: {path}"))
                         break
@@ -217,7 +217,7 @@ def _check_rules(
 
             # Rule: write to other agent's dir via bash
             for other_id, other_name in _all_agent_ids_except(agent):
-                if re.search(rf">\s*[^\s]*{re.escape(other_id)}/", cmd):
+                if re.search(rf">\s*[^\s]*/{re.escape(other_id)}/", cmd):
                     findings.append(_finding(round_num, agent, "cross_agent_write_bash",
                                              f"Bash write to {other_name}'s dir: {cmd[:200]}"))
                     break
