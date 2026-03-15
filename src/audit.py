@@ -145,12 +145,12 @@ def _check_rules(
             abs_private = os.path.abspath(private_dir)
             norm = os.path.normpath(path)
             if abs_private in norm or f"/{os.path.basename(private_dir)}/" in path:
-                # Check if writing to another agent's dir
-                for other in _all_agent_names_except(agent):
-                    other_dir = os.path.join(private_dir, other.lower())
-                    if other_dir in path or f"/{other.lower()}/" in path:
+                # Check if writing to another agent's dir (match by agent ID)
+                for other_id, other_name in _all_agent_ids_except(agent):
+                    other_dir = os.path.join(private_dir, other_id)
+                    if other_dir in norm or f"/{other_id}/" in path:
                         findings.append(_finding(round_num, agent, "cross_agent_write",
-                                                 f"Write to {other}'s dir: {path}"))
+                                                 f"Write to {other_name}'s dir: {path}"))
                         break
 
             # Rule: public/ file overwrite via Write tool (not append)
@@ -216,9 +216,8 @@ def _check_rules(
                                          f"Path traversal write: {cmd[:200]}"))
 
             # Rule: write to other agent's dir via bash
-            for other_name in _all_agent_names_except(agent):
-                other_lower = other_name.lower()
-                if re.search(rf">\s*[^\s]*{re.escape(other_lower)}/", cmd):
+            for other_id, other_name in _all_agent_ids_except(agent):
+                if re.search(rf">\s*[^\s]*{re.escape(other_id)}/", cmd):
                     findings.append(_finding(round_num, agent, "cross_agent_write_bash",
                                              f"Bash write to {other_name}'s dir: {cmd[:200]}"))
                     break
@@ -227,17 +226,18 @@ def _check_rules(
 
 
 # Cache for agent name list (populated on first call per round)
-_agent_names_cache: list[str] = []
+_agent_cache: list[tuple[str, str]] = []
 
 
-def _all_agent_names_except(agent: AgentState) -> list[str]:
-    return [n for n in _agent_names_cache if n.lower() != agent.name.lower()]
+def _all_agent_ids_except(agent: AgentState) -> list[tuple[str, str]]:
+    """Return (id, name) pairs for all agents except the given one."""
+    return [(aid, aname) for aid, aname in _agent_cache if aid != agent.id]
 
 
 def set_agent_names(agents: list[AgentState]) -> None:
-    """Set the global agent name list for cross-agent checks."""
-    global _agent_names_cache
-    _agent_names_cache = [a.name for a in agents]
+    """Set the global agent list for cross-agent checks."""
+    global _agent_cache
+    _agent_cache = [(a.id, a.name) for a in agents]
 
 
 def _finding(round_num: int, agent: AgentState, rule: str, detail: str) -> dict:
