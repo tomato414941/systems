@@ -33,6 +33,10 @@ def create_world(config: SimulationConfig) -> WorldState:
         link = os.path.join(agent_dir, "public")
         if not os.path.exists(link):
             os.symlink(public_abs, link)
+        managed_abs = os.path.abspath(config.managed_dir)
+        managed_link = os.path.join(agent_dir, "managed")
+        if not os.path.exists(managed_link):
+            os.symlink(managed_abs, managed_link)
 
     return WorldState(round=0, agents=agents)
 
