@@ -35,7 +35,7 @@ def invoke_agent(
     logs_dir: str = "logs",
 ) -> InvokeResult:
     if dry_run:
-        return _dry_run_response(agent)
+        return _dry_run_response(agent, world)
 
     agent_dir = os.path.join(private_dir, agent.id)
     os.makedirs(agent_dir, exist_ok=True)
@@ -419,13 +419,22 @@ def _handle_error(err: Exception, agent: Agent) -> InvokeResult:
     return InvokeResult(raw_output=f"ERROR: {str(err)[:500]}", failed=True)
 
 
-def _dry_run_response(agent: Agent) -> InvokeResult:
+def _dry_run_response(agent: Agent, world: WorldState) -> InvokeResult:
     import random
+    others = [a for a in world.agents if a.alive and a.id != agent.id]
+    target = random.choice(others).name if others else "nobody"
     actions = [
         (f"I am {agent.name}. I exist.", AgentCommands()),
-        (f"Energy is {agent.energy}. I must act.", AgentCommands()),
+        (f"Energy is {agent.energy}. I must act.", AgentCommands(
+            use=[UseServiceRequest(name="evaluator", input=f"STATUS")],
+        )),
         ("I choose to observe.", AgentCommands()),
-        ("Transferring energy.", AgentCommands(transfer=TransferRequest(to="Alpha", amount=1))),
+        (f"Transferring energy to {target}.", AgentCommands(
+            use=[UseServiceRequest(name="transfer", input=json.dumps({"to": target, "amount": 1}))],
+        )),
+        (f"Sending message to {target}.", AgentCommands(
+            use=[UseServiceRequest(name="message", input=json.dumps({"to": target, "message": "hello from dry-run"}))],
+        )),
     ]
     raw, cmds = random.choice(actions)
     return InvokeResult(commands=cmds, raw_output=raw)
