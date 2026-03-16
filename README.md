@@ -156,17 +156,20 @@ src/
 ```
 data/
   world.json          # World state (agents, round, energy)
-  services.json       # Service registry
-  services/           # Engine-managed service scripts (per service name)
-  agents/             # Per-agent directories
+  services/           # Per-service entity.json + installed scripts
+  subscriptions.json  # Service subscription registry
+  public/             # Agent-readable files (services.json, commands.md)
+  managed/            # Engine-managed files (services.json, commands.md)
+  private/            # Per-agent directories
     <id>/
       self_prompt.md   # Agent's personality/strategy document
-      commands.txt     # Agent commands (consumed each turn)
+      commands.json    # Agent commands (consumed each turn)
       inbox.md         # Messages from other agents (engine-managed)
       service_results/ # Results from USE SERVICE calls
-      shared -> ../../shared
-  shared/             # Shared workspace (agents read/write freely)
-    services.json     # Service registry copy (read-only for agents)
+      public -> ../../public
+      managed -> ../../managed
+  grid/               # Grid world state (grid_world.json)
+  eval/               # Evaluator votes (votes.json)
 logs/
   events.jsonl        # All events (transfers, deaths, spawns, sends, services)
   rounds.jsonl        # Per-round summaries
