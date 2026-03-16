@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .types import Agent, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
 from .physics import (
-    consume_energy, process_transfer, process_send, check_deaths, random_energy_reward,
+    consume_energy, check_deaths, random_energy_reward,
 )
 from .contracts import (
     process_publish_service, process_use_service, process_unpublish_service,
@@ -41,10 +41,6 @@ def _invoke_worker(
         print(f"  [{agent.name}] FAILED", flush=True)
     else:
         actions = []
-        if result.commands.transfer:
-            actions.append(f"TRANSFER {result.commands.transfer.amount} TO {result.commands.transfer.to}")
-        if result.commands.sends:
-            actions.append(f"{len(result.commands.sends)} SEND(s)")
         if result.commands.publish:
             actions.append(f"{len(result.commands.publish)} PUBLISH")
         if result.commands.use:
@@ -78,14 +74,6 @@ def _process_agent_result(
 ) -> RoundResult:
     all_events: list[WorldEvent] = []
     cmds = result.commands
-
-    if cmds.transfer:
-        all_events.extend(process_transfer(agent, cmds.transfer, world))
-
-    for send_req in cmds.sends:
-        if agent.energy <= 0:
-            break
-        all_events.extend(process_send(agent, send_req, world, config.private_dir))
 
     for pub_req in cmds.publish:
         all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.private_dir))

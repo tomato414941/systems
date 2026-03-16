@@ -59,9 +59,9 @@ def process_transfer(
     if receiver is None:
         return []
 
-    actual = min(request.amount, sender.energy)
-    sender.energy -= actual
-    receiver.energy += actual
+    actual = transfer_energy(sender, receiver, request.amount)
+    if actual <= 0:
+        return []
 
     return [WorldEvent(
         round=world.round,
@@ -77,9 +77,6 @@ def process_send(
     world: WorldState,
     private_dir: str,
 ) -> list[WorldEvent]:
-    if sender.energy < SEND_COST:
-        return []
-
     target = request.to.lower()
     receiver = next(
         (a for a in world.agents if a.alive and a.id != sender.id
@@ -89,7 +86,6 @@ def process_send(
     if receiver is None:
         return []
 
-    sender.energy -= SEND_COST
     message = request.message[:500]
 
     inbox_path = os.path.join(private_dir, receiver.id, "inbox.md")

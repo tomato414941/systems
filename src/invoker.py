@@ -1,17 +1,15 @@
 import json
 import os
-import re
 import subprocess
 import tempfile
 
 from .types import (
-    Agent, AgentCommands, SendRequest, TransferRequest,
+    Agent, AgentCommands,
     PublishServiceRequest, UseServiceRequest, UnpublishServiceRequest,
     UpdateServiceRequest, SubscribeRequest, UnsubscribeRequest, WorldState,
 )
 from .prompt import build_full_prompt, COMMANDS_FILE
 from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
-from .commands import resolve_type
 
 
 class InvokeResult:
@@ -50,7 +48,6 @@ def invoke_agent(
 
 MAX_USES_PER_TURN = 16
 MAX_PUBLISHES_PER_TURN = 2
-MAX_SENDS_PER_TURN = 16
 
 
 def _clear_command_files(agent_dir: str) -> None:
@@ -61,47 +58,18 @@ def _clear_command_files(agent_dir: str) -> None:
 
 
 def _read_commands_file(agent_dir: str) -> AgentCommands:
-    """Read and parse commands.json (with fallback to legacy text formats)."""
-    cmds = AgentCommands()
-
+    """Read and parse commands.json."""
     cmd_path = os.path.join(agent_dir, COMMANDS_FILE)
-    legacy_txt = os.path.join(agent_dir, "commands.txt")
-    legacy_transfer = os.path.join(agent_dir, "transfer.txt")
+    if not os.path.exists(cmd_path):
+        return AgentCommands()
 
-    if os.path.exists(cmd_path):
-        with open(cmd_path) as f:
-            raw = f.read().strip()
-        os.unlink(cmd_path)
-        for p in (legacy_txt, legacy_transfer):
-            if os.path.exists(p):
-                os.unlink(p)
-        if raw:
-            return _parse_json_commands(raw)
-        return cmds
+    with open(cmd_path) as f:
+        raw = f.read().strip()
+    os.unlink(cmd_path)
 
-    # Legacy: commands.txt (line-based text format)
-    if os.path.exists(legacy_txt):
-        with open(legacy_txt) as f:
-            raw = f.read().strip()
-        os.unlink(legacy_txt)
-        if os.path.exists(legacy_transfer):
-            os.unlink(legacy_transfer)
-        if raw:
-            return _parse_legacy_commands(raw)
-        return cmds
-
-    # Legacy: transfer.txt
-    if os.path.exists(legacy_transfer):
-        with open(legacy_transfer) as f:
-            raw = f.read().strip()
-        os.unlink(legacy_transfer)
-        if raw:
-            lines = [l.strip() for l in raw.splitlines() if l.strip()]
-            if lines:
-                cmds.transfer = _parse_legacy_transfer("TRANSFER " + lines[-1])
-        return cmds
-
-    return cmds
+    if raw:
+        return _parse_json_commands(raw)
+    return AgentCommands()
 
 
 def _parse_json_commands(raw: str) -> AgentCommands:
@@ -119,28 +87,25 @@ def _parse_json_commands(raw: str) -> AgentCommands:
     for entry in data:
         if not isinstance(entry, dict):
             continue
-        cmd_type = resolve_type(str(entry.get("type", "")).lower())
+        cmd_type = str(entry.get("type", "")).lower()
 
-        if cmd_type == "transfer" and len(cmds.use) < MAX_USES_PER_TURN:
-            try:
-                amount = float(entry["amount"])
-                to = str(entry["to"])
-                if amount > 0 and to:
+        if cmd_type in ("transfer", "send", "send_message") and len(cmds.use) < MAX_USES_PER_TURN:
+            if cmd_type == "transfer":
+                try:
                     cmds.use.append(UseServiceRequest(
                         name="transfer",
-                        input=json.dumps({"to": to, "amount": amount}),
+                        input=json.dumps({"to": str(entry["to"]), "amount": float(entry["amount"])}),
                     ))
-            except (KeyError, ValueError):
-                pass
-
-        elif cmd_type == "send_message" and len(cmds.use) < MAX_USES_PER_TURN:
-            try:
-                cmds.use.append(UseServiceRequest(
-                    name="message",
-                    input=json.dumps({"to": str(entry["to"]), "message": str(entry["message"])[:500]}),
-                ))
-            except KeyError:
-                pass
+                except (KeyError, ValueError):
+                    pass
+            else:
+                try:
+                    cmds.use.append(UseServiceRequest(
+                        name="message",
+                        input=json.dumps({"to": str(entry["to"]), "message": str(entry["message"])[:500]}),
+                    ))
+                except KeyError:
+                    pass
 
         elif cmd_type == "publish_service" and len(cmds.publish) < MAX_PUBLISHES_PER_TURN:
             try:
@@ -194,70 +159,6 @@ def _parse_json_commands(raw: str) -> AgentCommands:
 
     return cmds
 
-
-LEGACY_SEND_PATTERN = re.compile(
-    r'^\s*SEND\s+"([^"]{1,500})"\s+TO\s+([\w-]+)\s*$',
-    re.IGNORECASE,
-)
-LEGACY_PUBLISH_PATTERN = re.compile(
-    r'^\s*PUBLISH\s+SERVICE\s+([\w-]+)\s+SCRIPT\s+([\w/.]+)\s+PRICE\s+([\d.]+)\s+DESC\s+"([^"]{1,200})"\s*$',
-    re.IGNORECASE,
-)
-LEGACY_USE_PATTERN = re.compile(
-    r'^\s*USE\s+SERVICE\s+([\w-]+)\s+INPUT\s+"([^"]{1,500})"\s*$',
-    re.IGNORECASE,
-)
-LEGACY_UNPUBLISH_PATTERN = re.compile(
-    r'^\s*UNPUBLISH\s+SERVICE\s+([\w-]+)\s*$',
-    re.IGNORECASE,
-)
-LEGACY_UPDATE_PATTERN = re.compile(
-    r'^\s*UPDATE\s+SERVICE\s+([\w-]+)\s+PRICE\s+([\d.]+)\s*$',
-    re.IGNORECASE,
-)
-
-
-def _parse_legacy_commands(text: str) -> AgentCommands:
-    """Parse legacy commands.txt text format for backward compatibility."""
-    cmds = AgentCommands()
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-
-        transfer = _parse_legacy_transfer(line)
-        if transfer:
-            cmds.transfer = transfer
-            continue
-
-        m = LEGACY_SEND_PATTERN.match(line)
-        if m and len(cmds.sends) < MAX_SENDS_PER_TURN:
-            cmds.sends.append(SendRequest(to=m.group(2), message=m.group(1)))
-            continue
-
-        m = LEGACY_PUBLISH_PATTERN.match(line)
-        if m and len(cmds.publish) < MAX_PUBLISHES_PER_TURN:
-            cmds.publish.append(PublishServiceRequest(
-                name=m.group(1), script=m.group(2),
-                price=float(m.group(3)), description=m.group(4),
-            ))
-            continue
-
-        m = LEGACY_USE_PATTERN.match(line)
-        if m and len(cmds.use) < MAX_USES_PER_TURN:
-            cmds.use.append(UseServiceRequest(name=m.group(1), input=m.group(2)))
-            continue
-
-        m = LEGACY_UNPUBLISH_PATTERN.match(line)
-        if m:
-            cmds.unpublish.append(UnpublishServiceRequest(name=m.group(1)))
-            continue
-
-        m = LEGACY_UPDATE_PATTERN.match(line)
-        if m:
-            cmds.update.append(UpdateServiceRequest(name=m.group(1), price=float(m.group(2))))
-
-    return cmds
 
 def _invoke_claude(prompt: str, agent: Agent, model: str, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
     fd, prompt_file = tempfile.mkstemp(prefix=f"systems-prompt-{agent.id}-", suffix=".txt")
@@ -400,17 +301,6 @@ def _extract_cost_from_codex_stream(jsonl: str, model: str) -> float:
         except (json.JSONDecodeError, ValueError, TypeError):
             continue
     return (total_input * input_price + total_output * output_price) / 1_000_000
-
-
-def _parse_legacy_transfer(raw: str) -> TransferRequest | None:
-    match = re.search(r"^\s*TRANSFER\s+([\d.]+)\s+TO\s+([\w-]+)\s*$", raw, re.IGNORECASE | re.MULTILINE)
-    if not match:
-        return None
-    amount = float(match.group(1))
-    to = match.group(2)
-    if amount <= 0 or not to:
-        return None
-    return TransferRequest(to=to, amount=amount)
 
 
 def _handle_error(err: Exception, agent: Agent) -> InvokeResult:

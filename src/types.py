@@ -71,8 +71,6 @@ class UnsubscribeRequest:
 
 @dataclass
 class AgentCommands:
-    transfer: TransferRequest | None = None
-    sends: list[SendRequest] = field(default_factory=list)
     publish: list[PublishServiceRequest] = field(default_factory=list)
     use: list[UseServiceRequest] = field(default_factory=list)
     unpublish: list[UnpublishServiceRequest] = field(default_factory=list)

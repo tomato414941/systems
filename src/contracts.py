@@ -81,12 +81,14 @@ def process_use_service(
             params = json.loads(request.input)
         except (ValueError, TypeError):
             return []
+        if agent.energy < SEND_COST:
+            return []
         send_req = SendRequest(to=str(params.get("to", "")), message=str(params.get("message", ""))[:500])
         events = process_send(agent, send_req, world, private_dir)
         if events:
             msg_entity = load_entity(data_dir, "message")
             if msg_entity:
-                msg_entity.energy += SEND_COST
+                transfer_energy(agent, msg_entity, SEND_COST)
                 save_entity(msg_entity, data_dir)
         return events
 
