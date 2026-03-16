@@ -125,23 +125,30 @@ L1 executes effects on behalf of L2, enforcing energy constraints. L2 cannot byp
 
 ```
 src/
-  __main__.py         # CLI entry point
+  types.py            # Entity, Agent, Service, WorldState, commands
+  physics.py          # L1 — energy, transfers, messages, metabolism, death
+  contracts.py        # L2 — service dispatch, effects, publish/unpublish
+  services.py         # Service registry, subscriptions, lifecycle hooks
+  sandbox.py          # Service script execution (subprocess, 5min timeout)
   orchestrator.py     # Round lifecycle, spawning, designer AI
   invoker.py          # Claude/Codex subprocess invocation + command parsing
-  physics.py          # Energy, transfers, messaging, services, death
-  services.py         # Service registry (CRUD, script installation)
-  sandbox.py          # Service script execution (subprocess, 5min timeout)
   prompt.py           # Agent system prompt builder
   world.py            # World state persistence (world.json)
   turns.py            # Turn ordering and round progress
-  types.py            # Core dataclasses (Entity, Agent, WorldState, etc.)
   config.py           # Model registry, defaults
   audit.py            # Sandboxing violation detection
   logger.py           # JSONL round/event logging
   evaluator.py        # AI evaluator for round-end energy rewards
   spawner.py          # Spontaneous + designed spawn logic
-  agent_designer_prompt.md  # Designer AI prompt template
-  evaluator_prompt.md       # Evaluator AI prompt template
+  eval_service.py     # Builtin evaluator service (peer voting)
+  events.py           # Service event log
+  commands.py         # Command specs and rendering
+  grid/               # Builtin grid world service
+    service.py        #   Native handler + commands
+    types.py          #   GridAgent, GridWorld, Position, etc.
+    physics.py        #   Move, gather, resource regeneration
+    world.py          #   Grid world persistence
+    prompt.py         #   View rendering
 ```
 
 ## Data (runtime, git-ignored)

@@ -5,6 +5,8 @@ from .types import Agent, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
 from .physics import (
     consume_energy, process_transfer, process_send, check_deaths, random_energy_reward,
+)
+from .contracts import (
     process_publish_service, process_use_service, process_unpublish_service,
     process_update_service, cleanup_dead_services,
 )
@@ -83,7 +85,7 @@ def _process_agent_result(
     for send_req in cmds.sends:
         if agent.energy <= 0:
             break
-        all_events.extend(process_send(agent, send_req, world, config.private_dir, config.data_dir))
+        all_events.extend(process_send(agent, send_req, world, config.private_dir))
 
     for pub_req in cmds.publish:
         all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.private_dir))

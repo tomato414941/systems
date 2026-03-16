@@ -311,7 +311,7 @@ def run_hooks(
 
     from .types import WorldEvent
     from .sandbox import run_service_script, parse_service_output
-    from .physics import execute_effects
+    from .contracts import execute_effects
 
     entities = load_all_entities(data_dir)
     events: list[WorldEvent] = []
