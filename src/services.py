@@ -9,19 +9,14 @@ from dataclasses import asdict, dataclass, field
 from .types import WorldState
 
 SERVICES_DIR = "services"
-SERVICES_FILE = "services.json"
 MAX_SERVICES_PER_AGENT = 2
 MIN_SERVICE_PRICE = 0.5
-
-
 SUBSCRIPTIONS_FILE = "subscriptions.json"
-
-
 VALID_HOOKS = {"on_round_end", "on_agent_death", "on_transfer"}
 
 
 @dataclass
-class ServiceEntry:
+class ServiceEntity:
     name: str
     provider_id: str
     provider_name: str
@@ -32,65 +27,111 @@ class ServiceEntry:
     call_count: int = 0
     subscription_fee: float = 0.0
     hooks: list[str] = field(default_factory=list)
+    balance: float = 0.0
+    state: dict = field(default_factory=dict)
 
 
-def _services_path(data_dir: str) -> str:
-    return os.path.join(data_dir, SERVICES_FILE)
+ServiceEntry = ServiceEntity
 
+
+# ---------------------------------------------------------------------------
+# Entity persistence
+# ---------------------------------------------------------------------------
 
 def _service_dir(data_dir: str, name: str) -> str:
-    return os.path.join(data_dir, SERVICES_DIR, name)
+    return os.path.join(data_dir, SERVICES_DIR, name.lower())
 
 
-def load_services(data_dir: str) -> list[ServiceEntry]:
-    path = _services_path(data_dir)
+def _entity_path(data_dir: str, name: str) -> str:
+    return os.path.join(_service_dir(data_dir, name), "entity.json")
+
+
+def load_entity(data_dir: str, name: str) -> ServiceEntity | None:
+    path = _entity_path(data_dir, name)
     if not os.path.exists(path):
-        return []
+        return None
     with open(path) as f:
-        entries = json.load(f)
-    return [ServiceEntry(**e) for e in entries]
+        data = json.load(f)
+    known = ServiceEntity.__dataclass_fields__
+    return ServiceEntity(**{k: v for k, v in data.items() if k in known})
 
 
-def save_services(entries: list[ServiceEntry], data_dir: str) -> None:
-    path = _services_path(data_dir)
-    with open(path, "w") as f:
-        json.dump([asdict(e) for e in entries], f, indent=2)
-    # Copy to managed (authoritative) and public (read-only mirror)
-    managed_copy = os.path.join(data_dir, "managed", SERVICES_FILE)
-    public_copy = os.path.join(data_dir, "public", SERVICES_FILE)
-    for dest in (managed_copy, public_copy):
+def save_entity(entity: ServiceEntity, data_dir: str) -> None:
+    svc_dir = _service_dir(data_dir, entity.name)
+    os.makedirs(svc_dir, exist_ok=True)
+    with open(_entity_path(data_dir, entity.name), "w") as f:
+        json.dump(asdict(entity), f, indent=2)
+    _publish_mirror(data_dir)
+
+
+def load_all_entities(data_dir: str) -> list[ServiceEntity]:
+    svc_root = os.path.join(data_dir, SERVICES_DIR)
+    if not os.path.isdir(svc_root):
+        return []
+    entities = []
+    for name in sorted(os.listdir(svc_root)):
+        entity = load_entity(data_dir, name)
+        if entity:
+            entities.append(entity)
+    return entities
+
+
+def delete_entity(data_dir: str, name: str) -> None:
+    svc_dir = _service_dir(data_dir, name)
+    if os.path.exists(svc_dir):
+        shutil.rmtree(svc_dir)
+    _publish_mirror(data_dir)
+
+
+def _publish_mirror(data_dir: str) -> None:
+    entities = load_all_entities(data_dir)
+    summary = []
+    for e in entities:
+        d = asdict(e)
+        d.pop("state", None)
+        summary.append(d)
+    for dest_dir in ("managed", "public"):
+        dest = os.path.join(data_dir, dest_dir, "services.json")
         try:
-            shutil.copy2(path, dest)
+            with open(dest, "w") as f:
+                json.dump(summary, f, indent=2)
         except OSError:
             pass
 
 
+def find_service(name: str, data_dir: str) -> ServiceEntity | None:
+    return load_entity(data_dir, name.lower())
+
+
+def count_agent_services(agent_id: str, data_dir: str) -> int:
+    return sum(1 for e in load_all_entities(data_dir) if e.provider_id == agent_id)
+
+
+# ---------------------------------------------------------------------------
+# Script management
+# ---------------------------------------------------------------------------
+
 def install_script(data_dir: str, service_name: str, source_path: str) -> str | None:
-    """Copy script from agent workspace to engine-managed services dir. Returns script path or None on error."""
     if not os.path.exists(source_path):
         return None
-
     svc_dir = _service_dir(data_dir, service_name)
     os.makedirs(svc_dir, exist_ok=True)
-
     dest = os.path.join(svc_dir, os.path.basename(source_path))
     shutil.copy2(source_path, dest)
     os.chmod(dest, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
     return dest
 
 
-def get_script_path(data_dir: str, entry: ServiceEntry) -> str:
-    return os.path.join(_service_dir(data_dir, entry.name), entry.script)
+def get_script_path(data_dir: str, entity: ServiceEntity) -> str:
+    return os.path.join(_service_dir(data_dir, entity.name), entity.script)
 
 
-def remove_service_files(data_dir: str, service_name: str) -> None:
-    svc_dir = _service_dir(data_dir, service_name)
-    if os.path.exists(svc_dir):
-        shutil.rmtree(svc_dir)
-
+# ---------------------------------------------------------------------------
+# Builtin services
+# ---------------------------------------------------------------------------
 
 BUILTIN_SERVICES = [
-    ServiceEntry(
+    ServiceEntity(
         name="message",
         provider_id="system",
         provider_name="Engine",
@@ -99,7 +140,7 @@ BUILTIN_SERVICES = [
         description="Send a message to another agent. Input: {\"to\": \"<name-or-id>\", \"message\": \"<text>\"}. Max 500 chars. Delivered to recipient's inbox.md.",
         round_published=0,
     ),
-    ServiceEntry(
+    ServiceEntity(
         name="transfer",
         provider_id="system",
         provider_name="Engine",
@@ -108,7 +149,7 @@ BUILTIN_SERVICES = [
         description="Transfer energy to another agent. Input: {\"to\": \"<name-or-id>\", \"amount\": <number>}. The amount is deducted from your energy and added to the recipient.",
         round_published=0,
     ),
-    ServiceEntry(
+    ServiceEntity(
         name="grid",
         provider_id="system",
         provider_name="Engine",
@@ -118,7 +159,7 @@ BUILTIN_SERVICES = [
         round_published=0,
         subscription_fee=0.1,
     ),
-    ServiceEntry(
+    ServiceEntity(
         name="evaluator",
         provider_id="system",
         provider_name="Engine",
@@ -131,23 +172,20 @@ BUILTIN_SERVICES = [
 
 
 def ensure_builtin_services(data_dir: str) -> None:
-    entries = load_services(data_dir)
-    existing = {e.name.lower() for e in entries}
-    added = False
     for svc in BUILTIN_SERVICES:
-        if svc.name.lower() not in existing:
-            entries.append(svc)
-            added = True
-    if added:
-        save_services(entries, data_dir)
+        if load_entity(data_dir, svc.name) is None:
+            save_entity(svc, data_dir)
 
+
+# ---------------------------------------------------------------------------
+# Subscriptions (unchanged)
+# ---------------------------------------------------------------------------
 
 def _subscriptions_path(data_dir: str) -> str:
     return os.path.join(data_dir, SUBSCRIPTIONS_FILE)
 
 
 def load_subscriptions(data_dir: str) -> dict[str, list[str]]:
-    """Returns {service_name: [agent_id, ...]}"""
     path = _subscriptions_path(data_dir)
     if not os.path.exists(path):
         return {}
@@ -159,10 +197,8 @@ def save_subscriptions(subs: dict[str, list[str]], data_dir: str) -> None:
     path = _subscriptions_path(data_dir)
     with open(path, "w") as f:
         json.dump(subs, f, indent=2)
-    # Copy to managed (authoritative) and public (read-only mirror)
-    managed_copy = os.path.join(data_dir, "managed", SUBSCRIPTIONS_FILE)
-    public_copy = os.path.join(data_dir, "public", SUBSCRIPTIONS_FILE)
-    for dest in (managed_copy, public_copy):
+    for dest_dir in ("managed", "public"):
+        dest = os.path.join(data_dir, dest_dir, SUBSCRIPTIONS_FILE)
         try:
             shutil.copy2(path, dest)
         except OSError:
@@ -197,18 +233,17 @@ def is_subscribed(agent_id: str, service_name: str, data_dir: str) -> bool:
 
 
 def collect_subscription_fees(world: WorldState, data_dir: str) -> list[tuple[str, str, float]]:
-    """Collect subscription fees from all subscribers. Returns [(agent_id, service_name, amount)]."""
     subs = load_subscriptions(data_dir)
-    entries = load_services(data_dir)
-    fee_map = {e.name: e for e in entries if e.subscription_fee > 0}
+    entities = load_all_entities(data_dir)
+    fee_map = {e.name: e for e in entities if e.subscription_fee > 0}
     agents_map = {a.id: a for a in world.agents if a.alive}
 
     results = []
     changed = False
 
     for service_name, subscribers in list(subs.items()):
-        entry = fee_map.get(service_name)
-        if entry is None:
+        entity = fee_map.get(service_name)
+        if entity is None:
             continue
         for agent_id in list(subscribers):
             agent = agents_map.get(agent_id)
@@ -216,15 +251,15 @@ def collect_subscription_fees(world: WorldState, data_dir: str) -> list[tuple[st
                 subscribers.remove(agent_id)
                 changed = True
                 continue
-            if agent.energy >= entry.subscription_fee:
-                agent.energy -= entry.subscription_fee
-                if entry.provider_id == "system":
-                    _pool_fee(data_dir, service_name, entry.subscription_fee)
+            if agent.energy >= entity.subscription_fee:
+                agent.energy -= entity.subscription_fee
+                if entity.provider_id == "system":
+                    _pool_fee(data_dir, service_name, entity.subscription_fee)
                 else:
-                    provider = next((a for a in world.agents if a.id == entry.provider_id and a.alive), None)
+                    provider = next((a for a in world.agents if a.id == entity.provider_id and a.alive), None)
                     if provider:
-                        provider.energy += entry.subscription_fee
-                results.append((agent_id, service_name, entry.subscription_fee))
+                        provider.energy += entity.subscription_fee
+                results.append((agent_id, service_name, entity.subscription_fee))
             else:
                 subscribers.remove(agent_id)
                 changed = True
@@ -241,13 +276,14 @@ def _pool_fee(data_dir: str, service_name: str, amount: float) -> None:
         from .grid.service import _add_to_pool
         _add_to_pool(data_dir, amount)
     else:
-        from .pools import add_to_pool
-        add_to_pool(service_name, amount, data_dir)
+        entity = load_entity(data_dir, service_name)
+        if entity:
+            entity.balance += amount
+            save_entity(entity, data_dir)
 
 
 def _on_eviction(data_dir: str, service_name: str, agent_id: str) -> None:
     if service_name == "grid":
-        import os
         from .grid.world import load_grid_world, save_grid_world
         grid_dir = os.path.join(data_dir, "grid")
         grid_world = load_grid_world(grid_dir)
@@ -256,44 +292,20 @@ def _on_eviction(data_dir: str, service_name: str, agent_id: str) -> None:
             save_grid_world(grid_world, grid_dir)
 
 
-def load_service_state(data_dir: str, service_name: str) -> dict:
-    state_path = os.path.join(data_dir, SERVICES_DIR, service_name, "state.json")
-    if not os.path.exists(state_path):
-        return {}
-    with open(state_path) as f:
-        return json.load(f)
-
-
-def save_service_state(data_dir: str, service_name: str, state: dict) -> None:
-    svc_dir = os.path.join(data_dir, SERVICES_DIR, service_name)
-    os.makedirs(svc_dir, exist_ok=True)
-    state_path = os.path.join(svc_dir, "state.json")
-    with open(state_path, "w") as f:
-        json.dump(state, f, indent=2)
-
-
-def find_service(name: str, data_dir: str) -> ServiceEntry | None:
-    for entry in load_services(data_dir):
-        if entry.name.lower() == name.lower():
-            return entry
-    return None
-
-
-def count_agent_services(agent_id: str, data_dir: str) -> int:
-    return sum(1 for e in load_services(data_dir) if e.provider_id == agent_id)
-
-
 def remove_dead_agent_services(world: WorldState, data_dir: str) -> list[str]:
     alive_ids = {a.id for a in world.agents if a.alive}
-    entries = load_services(data_dir)
-    removed = [e.name for e in entries if e.provider_id not in alive_ids]
-    if removed:
-        for name in removed:
-            remove_service_files(data_dir, name)
-        entries = [e for e in entries if e.provider_id in alive_ids]
-        save_services(entries, data_dir)
+    entities = load_all_entities(data_dir)
+    removed = []
+    for e in entities:
+        if e.provider_id not in alive_ids and e.provider_id != "system":
+            delete_entity(data_dir, e.name)
+            removed.append(e.name)
     return removed
 
+
+# ---------------------------------------------------------------------------
+# Lifecycle hooks
+# ---------------------------------------------------------------------------
 
 def run_hooks(
     hook_name: str,
@@ -302,51 +314,48 @@ def run_hooks(
     data_dir: str,
     private_dir: str,
 ) -> list["WorldEvent"]:
-    """Run all services registered for this hook. Returns effect events."""
     if hook_name not in VALID_HOOKS:
         return []
 
     from .types import WorldEvent
     from .sandbox import run_service_script, parse_service_output
-    from .pools import get_pool
     from .physics import execute_effects
 
-    entries = load_services(data_dir)
+    entities = load_all_entities(data_dir)
     events: list[WorldEvent] = []
 
-    for entry in entries:
-        if hook_name not in entry.hooks:
+    for entity in entities:
+        if hook_name not in entity.hooks:
             continue
-        if entry.provider_id == "system":
+        if entity.provider_id == "system":
             continue
 
-        script_path = get_script_path(data_dir, entry)
-        pool_balance = get_pool(entry.name, data_dir)
-        svc_state = load_service_state(data_dir, entry.name)
-
+        script_path = get_script_path(data_dir, entity)
         output_raw, success = run_service_script(
             script_path, "system", "Engine", "", world.round,
-            pool_balance=pool_balance,
-            state=svc_state, trigger=hook_name, context=context,
+            pool_balance=entity.balance,
+            state=entity.state, trigger=hook_name, context=context,
         )
 
         if not success:
             events.append(WorldEvent(
                 round=world.round, type="service_effect",
-                agent_id=entry.provider_id,
-                details={"service": entry.name, "hook": hook_name, "error": output_raw[:200]},
+                agent_id=entity.provider_id,
+                details={"service": entity.name, "hook": hook_name, "error": output_raw[:200]},
             ))
             continue
 
         display_text, effects, new_state = parse_service_output(output_raw)
         if new_state is not None:
-            save_service_state(data_dir, entry.name, new_state)
+            entity.state = new_state
 
         if effects:
             effect_events = execute_effects(
-                effects, None, entry.name, world, data_dir, private_dir,
+                effects, None, entity, world, data_dir, private_dir,
                 from_hook=True, call_depth=0,
             )
             events.extend(effect_events)
+
+        save_entity(entity, data_dir)
 
     return events
