@@ -16,7 +16,7 @@ from .services import (
 )
 from .sandbox import run_service_script, parse_service_output
 from .events import append_event
-from .physics import process_send, process_transfer, SEND_COST
+from .physics import process_send, process_transfer, transfer_energy, SEND_COST
 from .grid.service import grid_handler
 from .eval_service import evaluator_handler
 
@@ -111,8 +111,7 @@ def process_use_service(
         if agent.energy < entity.price:
             return []
         if entity.price > 0:
-            agent.energy -= entity.price
-            entity.energy += entity.price
+            transfer_energy(agent, entity, entity.price)
 
         output, effects, new_state = handler(
             agent.id, agent.name, request.input, world.round, entity, data_dir,
@@ -148,8 +147,7 @@ def process_use_service(
         if provider is None:
             return []
 
-        agent.energy -= entity.price
-        entity.energy += entity.price
+        transfer_energy(agent, entity, entity.price)
 
         script_path = get_script_path(data_dir, entity)
         output_raw, success = run_service_script(
@@ -159,8 +157,7 @@ def process_use_service(
         )
 
         if not success:
-            entity.energy -= entity.price
-            agent.energy += entity.price
+            transfer_energy(entity, agent, entity.price)
             save_entity(entity, data_dir)
             return [WorldEvent(
                 round=world.round, type="use_service", agent_id=agent.id,
@@ -192,8 +189,7 @@ def process_use_service(
             effects, agent, entity, world, data_dir, private_dir,
         ))
     elif provider:
-        entity.energy -= entity.price
-        provider.energy += entity.price
+        transfer_energy(entity, provider, entity.price)
 
     entity.call_count += 1
     save_entity(entity, data_dir)
@@ -221,7 +217,6 @@ def execute_effects(
 ) -> list[WorldEvent]:
     """Execute effects from a service script, spending from the entity energy."""
     events: list[WorldEvent] = []
-    spent = 0.0
 
     for eff in effects:
         if not isinstance(eff, dict):
@@ -229,21 +224,17 @@ def execute_effects(
         etype = eff.get("type", "")
 
         if etype == "transfer_to_caller" and not from_hook:
-            amount = min(float(eff.get("amount", 0)), entity.energy - spent)
-            if amount <= 0:
+            requested = float(eff.get("amount", 0))
+            actual = transfer_energy(entity, caller, requested)
+            if actual <= 0:
                 continue
-            caller.energy += amount
-            spent += amount
             events.append(WorldEvent(
                 round=world.round, type="service_effect", agent_id=caller.id,
-                details={"service": entity.name, "effect": "transfer_to_caller", "amount": amount},
+                details={"service": entity.name, "effect": "transfer_to_caller", "amount": actual},
             ))
 
         elif etype == "transfer_to":
             target_id = str(eff.get("agent", ""))
-            amount = min(float(eff.get("amount", 0)), entity.energy - spent)
-            if amount <= 0:
-                continue
             target = next(
                 (a for a in world.agents if a.alive and
                  (a.id == target_id or a.name.lower() == target_id.lower())),
@@ -251,11 +242,13 @@ def execute_effects(
             )
             if target is None:
                 continue
-            target.energy += amount
-            spent += amount
+            requested = float(eff.get("amount", 0))
+            actual = transfer_energy(entity, target, requested)
+            if actual <= 0:
+                continue
             events.append(WorldEvent(
                 round=world.round, type="service_effect", agent_id=target.id,
-                details={"service": entity.name, "effect": "transfer_to", "amount": amount, "from_pool": True},
+                details={"service": entity.name, "effect": "transfer_to", "amount": actual, "from_pool": True},
             ))
 
         elif etype == "message":
@@ -307,10 +300,9 @@ def execute_effects(
             if target_provider is None:
                 continue
             call_cost = target_entity.price
-            if call_cost > entity.energy - spent:
+            if call_cost > entity.energy:
                 continue
-            spent += call_cost
-            target_entity.energy += call_cost
+            transfer_energy(entity, target_entity, call_cost)
             # Run target service
             target_script = get_script_path(data_dir, target_entity)
             output_raw, success = run_service_script(
@@ -341,9 +333,6 @@ def execute_effects(
                     ))
                 target_entity.call_count += 1
             save_entity(target_entity, data_dir)
-
-    if spent > 0:
-        entity.energy -= spent
 
     return events
 

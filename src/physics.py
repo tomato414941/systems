@@ -4,13 +4,23 @@ import os
 import random
 
 from .types import (
-    Agent, SendRequest, TransferRequest,
+    Agent, Entity, SendRequest, TransferRequest,
     WorldEvent, WorldState,
 )
 
 
 FIXED_TURN_COST = 1.0
 SEND_COST = 0.1
+
+
+def transfer_energy(source: Entity, target: Entity, amount: float) -> float:
+    """L1 primitive: move energy between any entities. Returns actual amount transferred."""
+    actual = min(amount, source.energy)
+    if actual <= 0:
+        return 0.0
+    source.energy -= actual
+    target.energy += actual
+    return actual
 
 
 def consume_energy(agent: Agent, round_num: int, cost_usd: float = 0.0, base_metabolism: float = 0.0) -> list[WorldEvent]:
