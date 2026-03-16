@@ -3,7 +3,7 @@ import os
 import subprocess
 import tempfile
 
-from .types import AgentState, SimulationConfig, WorldEvent, WorldState
+from .types import Agent, SimulationConfig, WorldEvent, WorldState
 from .world import get_alive_agents
 
 
@@ -58,7 +58,7 @@ def evaluate_round(
 
 def _evaluate_axis(
     axis: dict, template: str, summaries: str,
-    alive: list[AgentState], world: WorldState, config: SimulationConfig,
+    alive: list[Agent], world: WorldState, config: SimulationConfig,
 ) -> list[WorldEvent]:
     output_dir = tempfile.mkdtemp(prefix="systems-evaluator-")
     try:
@@ -104,7 +104,7 @@ def _evaluate_axis(
         shutil.rmtree(output_dir, ignore_errors=True)
 
 
-def _build_agent_summaries(agents: list[AgentState], private_dir: str, logs_dir: str = "", round_num: int = 0) -> str:
+def _build_agent_summaries(agents: list[Agent], private_dir: str, logs_dir: str = "", round_num: int = 0) -> str:
     action_log = _load_round_actions(logs_dir, round_num) if logs_dir else {}
     lines = []
     for a in agents:

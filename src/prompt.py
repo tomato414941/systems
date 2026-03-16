@@ -1,6 +1,6 @@
 import os
 
-from .types import AgentState, WorldState
+from .types import Agent, WorldState
 
 SELF_PROMPT_FILE = "self_prompt.md"
 HUMAN_TO_AGENT_FILE = "human_to_agent.md"
@@ -8,7 +8,7 @@ AGENT_TO_HUMAN_FILE = "agent_to_human.md"
 COMMANDS_FILE = "commands.json"
 
 
-def build_system_prompt(agent: AgentState, world: WorldState, public_dir: str, agent_dir: str) -> str:
+def build_system_prompt(agent: Agent, world: WorldState, public_dir: str, agent_dir: str) -> str:
     alive_count = sum(1 for a in world.agents if a.alive)
     alive_agents = [a for a in world.agents if a.alive and a.id != agent.id]
     entity_list = ", ".join(f"{a.name} ({a.id})" for a in alive_agents) if alive_agents else "none"
@@ -36,7 +36,7 @@ Rules:
 - The human may leave messages for you in {HUMAN_TO_AGENT_FILE} in your private workspace. Check it if it exists."""
 
 
-def build_full_prompt(agent: AgentState, world: WorldState, public_dir: str, agent_dir: str) -> str:
+def build_full_prompt(agent: Agent, world: WorldState, public_dir: str, agent_dir: str) -> str:
     system = build_system_prompt(agent, world, public_dir, agent_dir)
 
     self_prompt_path = os.path.join(agent_dir, SELF_PROMPT_FILE)

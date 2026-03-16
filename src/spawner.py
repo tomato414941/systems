@@ -5,9 +5,9 @@ import re
 import subprocess
 import tempfile
 
-from .types import AgentState, SimulationConfig, WorldEvent, WorldState
+from .types import Agent, SimulationConfig, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
-from .config import get_agent_name
+from .config import get_agent_name, TOP_MODELS
 from .prompt import SELF_PROMPT_FILE
 from .logger import log_event
 
@@ -16,7 +16,7 @@ from .logger import log_event
 # Self-prompt management
 # ---------------------------------------------------------------------------
 
-def snapshot_self_prompts(agents: list[AgentState], private_dir: str) -> dict[str, str | None]:
+def snapshot_self_prompts(agents: list[Agent], private_dir: str) -> dict[str, str | None]:
     snap: dict[str, str | None] = {}
     for a in agents:
         path = os.path.join(private_dir, a.id, SELF_PROMPT_FILE)
@@ -40,7 +40,7 @@ def deploy_self_prompts(authorized: dict[str, str | None], private_dir: str) -> 
 
 
 def update_agent_prompt(
-    agent: AgentState, private_dir: str,
+    agent: Agent, private_dir: str,
     authorized_prompts: dict[str, str | None],
 ) -> None:
     path = os.path.join(private_dir, agent.id, SELF_PROMPT_FILE)
@@ -61,10 +61,10 @@ def create_agent(
     authorized_prompts: dict[str, str | None],
     self_prompt_content: str | None,
     energy: float | None = None,
-) -> AgentState:
+) -> Agent:
     """Create a new agent: state, directory, symlink, self_prompt, and activate."""
     new_index = len(world.agents)
-    agent = AgentState(
+    agent = Agent(
         id=f"agent-{new_index}",
         name=get_agent_name(new_index),
         energy=energy if energy is not None else config.initial_energy,
@@ -101,7 +101,7 @@ def create_agent(
 # Spontaneous spawn
 # ---------------------------------------------------------------------------
 
-def _derive_child_name(parent_name: str, agents: list[AgentState]) -> str:
+def _derive_child_name(parent_name: str, agents: list[Agent]) -> str:
     """Generate child name from parent: Alpha -> Alpha-2, Alpha-2 -> Alpha-3, etc."""
     # Extract base name (strip existing generation suffix)
     base = re.sub(r"-\d+$", "", parent_name)
@@ -225,8 +225,7 @@ def designed_spawn(
     designer_invoker: str, designer_model: str,
 ) -> list[WorldEvent]:
     """Spawn a fresh agent via intelligent design — AI-generated self_prompt, top-tier model."""
-    _TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
-    invoker, model = random.choice(_TOP_MODELS)
+    invoker, model = random.choice(TOP_MODELS)
 
     designed_name, designed_prompt = _design_self_prompt(world, config, designer_invoker, designer_model)
 
@@ -263,7 +262,7 @@ def designed_spawn(
 def run_designed_spawn(world: WorldState, config: SimulationConfig) -> None:
     """Run designed spawns outside of the normal round lifecycle."""
     authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
-    for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
+    for d_invoker, d_model in TOP_MODELS:
         events = designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
         for event in events:
             log_event(event)

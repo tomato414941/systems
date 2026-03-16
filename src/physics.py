@@ -1,26 +1,28 @@
+import json
+import os
 import random
 
-import os
-
 from .types import (
-    AgentState, PublishServiceRequest, SendRequest, TransferRequest,
+    Agent, PublishServiceRequest, SendRequest, TransferRequest,
     UnpublishServiceRequest, UpdateServiceRequest, UseServiceRequest,
     WorldEvent, WorldState,
 )
 from .services import (
-    ServiceEntity, find_service, load_entity, save_entity, delete_entity,
+    Service, find_service, load_entity, save_entity, delete_entity,
     load_all_entities, count_agent_services,
     remove_dead_agent_services, install_script, get_script_path,
     MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT, VALID_HOOKS,
 )
 from .sandbox import run_service_script, parse_service_output
 from .events import append_event
+from .grid.service import grid_handler
+from .eval_service import evaluator_handler
 
 
 FIXED_TURN_COST = 1.0
 
 
-def consume_energy(agent: AgentState, round_num: int, cost_usd: float = 0.0, base_metabolism: float = 0.0) -> list[WorldEvent]:
+def consume_energy(agent: Agent, round_num: int, cost_usd: float = 0.0, base_metabolism: float = 0.0) -> list[WorldEvent]:
     activity_cost = FIXED_TURN_COST
     total_cost = activity_cost
     agent.energy -= total_cost
@@ -40,7 +42,7 @@ def consume_energy(agent: AgentState, round_num: int, cost_usd: float = 0.0, bas
 
 
 def process_transfer(
-    sender: AgentState,
+    sender: Agent,
     request: TransferRequest,
     world: WorldState,
 ) -> list[WorldEvent]:
@@ -72,7 +74,7 @@ SEND_COST = 0.1
 
 
 def process_send(
-    sender: AgentState,
+    sender: Agent,
     request: SendRequest,
     world: WorldState,
     private_dir: str,
@@ -94,7 +96,7 @@ def process_send(
     if data_dir:
         msg_entity = load_entity(data_dir, "message")
         if msg_entity:
-            msg_entity.balance += SEND_COST
+            msg_entity.energy += SEND_COST
             save_entity(msg_entity, data_dir)
     message = request.message[:500]
 
@@ -128,7 +130,7 @@ def random_energy_reward(world: WorldState, count: int, amount: int) -> list[Wor
     return events
 
 
-def apply_gift(agent: AgentState, amount: float, round_num: int, message: str = "") -> list[WorldEvent]:
+def apply_gift(agent: Agent, amount: float, round_num: int, message: str = "") -> list[WorldEvent]:
     if amount <= 0:
         return []
     agent.energy += amount
@@ -153,7 +155,7 @@ def check_deaths(world: WorldState) -> list[WorldEvent]:
 
 
 def process_publish_service(
-    agent: AgentState,
+    agent: Agent,
     request: PublishServiceRequest,
     world: WorldState,
     data_dir: str,
@@ -171,7 +173,7 @@ def process_publish_service(
     if installed is None:
         return []
 
-    entity = ServiceEntity(
+    entity = Service(
         name=request.name,
         provider_id=agent.id,
         provider_name=agent.name,
@@ -192,166 +194,132 @@ def process_publish_service(
     )]
 
 
+NATIVE_HANDLERS = {
+    "grid": grid_handler,
+    "evaluator": evaluator_handler,
+}
+
+
 def process_use_service(
-    agent: AgentState,
+    agent: Agent,
     request: UseServiceRequest,
     world: WorldState,
     data_dir: str,
     private_dir: str,
 ) -> list[WorldEvent]:
-    import json as _json
-    from .grid.service import is_builtin_service as is_grid_service, handle_grid_service, BUILTIN_SERVICE_PRICE as GRID_PRICE
-    from .eval_service import is_evaluator_service, handle_evaluator_service, BUILTIN_SERVICE_PRICE as EVAL_PRICE
 
-    # Builtin: message (send_message)
+    # Protocol primitives
     if request.name == "message":
         try:
-            params = _json.loads(request.input)
+            params = json.loads(request.input)
         except (ValueError, TypeError):
             return []
         send_req = SendRequest(to=str(params.get("to", "")), message=str(params.get("message", ""))[:500])
         return process_send(agent, send_req, world, private_dir, data_dir)
 
-    # Builtin: transfer
     if request.name == "transfer":
         try:
-            params = _json.loads(request.input)
+            params = json.loads(request.input)
         except (ValueError, TypeError):
             return []
         transfer_req = TransferRequest(to=str(params.get("to", "")), amount=float(params.get("amount", 0)))
         return process_transfer(agent, transfer_req, world)
 
-    if is_grid_service(request.name):
-        if agent.energy < GRID_PRICE:
-            return []
-        agent.energy -= GRID_PRICE
-        from .grid.service import _add_to_pool
-        _add_to_pool(data_dir, GRID_PRICE)
-        output, energy_gained = handle_grid_service(
-            agent.id, agent.name, request.input, world.round, data_dir,
-        )
-        if energy_gained > 0:
-            agent.energy += energy_gained
-        results_dir = os.path.join(private_dir, agent.id, "service_results")
-        os.makedirs(results_dir, exist_ok=True)
-        with open(os.path.join(results_dir, f"{request.name}.txt"), "w") as f:
-            f.write(output)
-        grid_entity = load_entity(data_dir, request.name)
-        if grid_entity:
-            grid_entity.call_count += 1
-            save_entity(grid_entity, data_dir)
-        details = {"service": request.name, "success": True, "builtin": True, "price": GRID_PRICE}
-        if energy_gained > 0:
-            details["energy_gained"] = energy_gained
-        return [WorldEvent(
-            round=world.round,
-            type="use_service",
-            agent_id=agent.id,
-            details=details,
-        )]
-
-    if is_evaluator_service(request.name):
-        if agent.energy < EVAL_PRICE:
-            return []
-        if EVAL_PRICE > 0:
-            agent.energy -= EVAL_PRICE
-        output, energy_gained = handle_evaluator_service(
-            agent.id, agent.name, request.input, world.round, data_dir,
-        )
-        results_dir = os.path.join(private_dir, agent.id, "service_results")
-        os.makedirs(results_dir, exist_ok=True)
-        with open(os.path.join(results_dir, f"{request.name}.txt"), "w") as f:
-            f.write(output)
-        eval_entity = load_entity(data_dir, request.name)
-        if eval_entity:
-            eval_entity.call_count += 1
-            save_entity(eval_entity, data_dir)
-        return [WorldEvent(
-            round=world.round,
-            type="use_service",
-            agent_id=agent.id,
-            details={"service": request.name, "success": True, "builtin": True, "price": EVAL_PRICE},
-        )]
-
-    # User-published services
+    # Entity path
     entity = find_service(request.name, data_dir)
     if entity is None:
         return []
 
-    # View mode: read-only, no cost, no effects, no state change
-    if request.view:
+    handler = NATIVE_HANDLERS.get(request.name)
+    provider = None
+
+    if handler:
+        # Native handler path
+        if agent.energy < entity.price:
+            return []
+        if entity.price > 0:
+            agent.energy -= entity.price
+            entity.energy += entity.price
+
+        output, effects, new_state = handler(
+            agent.id, agent.name, request.input, world.round, entity, data_dir,
+        )
+    else:
+        # User-published script path
+        if request.view:
+            script_path = get_script_path(data_dir, entity)
+            output_raw, success = run_service_script(
+                script_path, agent.id, agent.name, request.input, world.round,
+                pool_energy=entity.energy, price=0.0,
+                state=entity.state, trigger="view",
+            )
+            if not success:
+                return [WorldEvent(
+                    round=world.round, type="use_service", agent_id=agent.id,
+                    details={"service": request.name, "success": False, "view": True, "error": output_raw[:200]},
+                )]
+            display_text, _, _ = parse_service_output(output_raw)
+            results_dir = os.path.join(private_dir, agent.id, "service_results")
+            os.makedirs(results_dir, exist_ok=True)
+            with open(os.path.join(results_dir, f"{entity.name}.txt"), "w") as f:
+                f.write(display_text)
+            return [WorldEvent(
+                round=world.round, type="use_service", agent_id=agent.id,
+                details={"service": request.name, "success": True, "view": True, "price": 0.0},
+            )]
+
+        if agent.energy < entity.price:
+            return []
+
+        provider = next((a for a in world.agents if a.id == entity.provider_id and a.alive), None)
+        if provider is None:
+            return []
+
+        agent.energy -= entity.price
+        entity.energy += entity.price
+
         script_path = get_script_path(data_dir, entity)
         output_raw, success = run_service_script(
             script_path, agent.id, agent.name, request.input, world.round,
-            pool_balance=entity.balance, price=0.0,
-            state=entity.state, trigger="view",
+            pool_energy=entity.energy, price=entity.price,
+            state=entity.state, trigger="call",
         )
+
         if not success:
+            entity.energy -= entity.price
+            agent.energy += entity.price
+            save_entity(entity, data_dir)
             return [WorldEvent(
                 round=world.round, type="use_service", agent_id=agent.id,
-                details={"service": request.name, "success": False, "view": True, "error": output_raw[:200]},
+                details={"service": request.name, "success": False, "error": output_raw[:200]},
             )]
-        display_text, _, _ = parse_service_output(output_raw)
-        results_dir = os.path.join(private_dir, agent.id, "service_results")
-        os.makedirs(results_dir, exist_ok=True)
-        with open(os.path.join(results_dir, f"{entity.name}.txt"), "w") as f:
-            f.write(display_text)
-        return [WorldEvent(
-            round=world.round, type="use_service", agent_id=agent.id,
-            details={"service": request.name, "success": True, "view": True, "price": 0.0},
-        )]
 
-    if entity.provider_id == agent.id:
-        return []
-    if agent.energy < entity.price:
-        return []
+        output, effects, new_state = parse_service_output(output_raw)
 
-    provider = next((a for a in world.agents if a.id == entity.provider_id and a.alive), None)
-    if provider is None:
-        return []
-
-    # Deduct from caller, add to entity balance
-    agent.energy -= entity.price
-    entity.balance += entity.price
-
-    script_path = get_script_path(data_dir, entity)
-    output_raw, success = run_service_script(
-        script_path, agent.id, agent.name, request.input, world.round,
-        pool_balance=entity.balance, price=entity.price,
-        state=entity.state, trigger="call",
-    )
-
-    if not success:
-        entity.balance -= entity.price
-        agent.energy += entity.price
-        save_entity(entity, data_dir)
-        return [WorldEvent(
-            round=world.round,
-            type="use_service",
-            agent_id=agent.id,
-            details={"service": request.name, "success": False, "error": output_raw[:200]},
-        )]
-
-    display_text, effects, new_state = parse_service_output(output_raw)
+    # Common path
     if new_state is not None:
         entity.state = new_state
 
+    details = {
+        "service": request.name,
+        "provider": entity.provider_id,
+        "price": entity.price,
+        "success": True,
+    }
+    if handler:
+        details["builtin"] = True
+
     all_events = [WorldEvent(
-        round=world.round,
-        type="use_service",
-        agent_id=agent.id,
-        details={
-            "service": request.name, "provider": entity.provider_id,
-            "price": entity.price, "success": True,
-        },
+        round=world.round, type="use_service", agent_id=agent.id,
+        details=details,
     )]
 
     if effects:
         all_events.extend(execute_effects(
             effects, agent, entity, world, data_dir, private_dir,
         ))
-    else:
-        entity.balance -= entity.price
+    elif provider:
+        entity.energy -= entity.price
         provider.energy += entity.price
 
     entity.call_count += 1
@@ -360,7 +328,7 @@ def process_use_service(
     results_dir = os.path.join(private_dir, agent.id, "service_results")
     os.makedirs(results_dir, exist_ok=True)
     with open(os.path.join(results_dir, f"{entity.name}.txt"), "w") as f:
-        f.write(display_text)
+        f.write(output)
 
     return all_events
 
@@ -370,15 +338,15 @@ MAX_CALL_DEPTH = 3
 
 def execute_effects(
     effects: list[dict],
-    caller: AgentState,
-    entity: ServiceEntity,
+    caller: Agent,
+    entity: Service,
     world: WorldState,
     data_dir: str,
     private_dir: str,
     from_hook: bool = False,
     call_depth: int = 0,
 ) -> list[WorldEvent]:
-    """Execute effects from a service script, spending from the entity balance."""
+    """Execute effects from a service script, spending from the entity energy."""
     events: list[WorldEvent] = []
     spent = 0.0
 
@@ -388,7 +356,7 @@ def execute_effects(
         etype = eff.get("type", "")
 
         if etype == "transfer_to_caller" and not from_hook:
-            amount = min(float(eff.get("amount", 0)), entity.balance - spent)
+            amount = min(float(eff.get("amount", 0)), entity.energy - spent)
             if amount <= 0:
                 continue
             caller.energy += amount
@@ -400,7 +368,7 @@ def execute_effects(
 
         elif etype == "transfer_to":
             target_id = str(eff.get("agent", ""))
-            amount = min(float(eff.get("amount", 0)), entity.balance - spent)
+            amount = min(float(eff.get("amount", 0)), entity.energy - spent)
             if amount <= 0:
                 continue
             target = next(
@@ -466,16 +434,16 @@ def execute_effects(
             if target_provider is None:
                 continue
             call_cost = target_entity.price
-            if call_cost > entity.balance - spent:
+            if call_cost > entity.energy - spent:
                 continue
             spent += call_cost
-            target_entity.balance += call_cost
+            target_entity.energy += call_cost
             # Run target service
             target_script = get_script_path(data_dir, target_entity)
             output_raw, success = run_service_script(
                 target_script, f"service:{entity.name}", entity.name,
                 call_input, world.round,
-                pool_balance=target_entity.balance, price=target_entity.price,
+                pool_energy=target_entity.energy, price=target_entity.price,
                 state=target_entity.state, trigger="service_call",
             )
             events.append(WorldEvent(
@@ -503,13 +471,13 @@ def execute_effects(
             save_entity(target_entity, data_dir)
 
     if spent > 0:
-        entity.balance -= spent
+        entity.energy -= spent
 
     return events
 
 
 def process_unpublish_service(
-    agent: AgentState,
+    agent: Agent,
     request: UnpublishServiceRequest,
     world: WorldState,
     data_dir: str,
@@ -529,7 +497,7 @@ def process_unpublish_service(
 
 
 def process_update_service(
-    agent: AgentState,
+    agent: Agent,
     request: UpdateServiceRequest,
     world: WorldState,
     data_dir: str,

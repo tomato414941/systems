@@ -5,10 +5,14 @@ from typing import Any, Literal
 
 
 @dataclass
-class AgentState:
-    id: str
+class Entity:
     name: str
-    energy: float
+    energy: float = 0.0
+
+
+@dataclass(kw_only=True)
+class Agent(Entity):
+    id: str
     alive: bool
     age: int
     invoker: Literal["claude", "codex"]
@@ -80,7 +84,7 @@ class AgentCommands:
 @dataclass
 class WorldState:
     round: int
-    agents: list[AgentState]
+    agents: list[Agent]
 
 
 @dataclass

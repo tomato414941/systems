@@ -62,6 +62,8 @@ def random_invoker_model() -> tuple[str, str]:
     return invoker, model
 
 
+TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
+
 DEFAULT_CONFIG = SimulationConfig()
 
 

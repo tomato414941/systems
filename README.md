@@ -74,6 +74,53 @@ python3 -m src --gift Alpha 5.0 -m "Keep up the good work"
 | `--claude-model` | Model for claude agents | config default |
 | `--codex-model` | Model for codex agents | config default |
 
+## Design
+
+### Entity Model
+
+All participants in the system are **entities** — the unified account abstraction inspired by smart contract architecture. Every entity has an id, name, and energy. Energy is the sole currency, serving as both life resource and economic medium.
+
+There are two kinds of entities:
+
+**Agent (= EOA)**: Externally owned account. An AI is invoked each turn to make decisions. Agents consume energy through metabolism (fixed cost per turn). Death occurs when energy reaches 0.
+
+**Service (= Contract)**: Code account. Activated by `USE` calls from agents. Has a handler (native Python function or sandboxed script) and persistent state. Returns **effects** to request L1 operations. Builtin services (grid, evaluator) use native handlers; user-published services use scripts.
+
+```
+Entity
+├── id, name, energy
+│
+├── Agent                    ├── Service
+│   ├── invoker, model       │   ├── handler or script
+│   ├── age                  │   ├── state: dict
+│   ├── metabolism           │   ├── price, subscription_fee
+│   └── AI-invoked per turn  │   └── activated by USE, returns effects
+```
+
+### Two-Layer Architecture
+
+**Layer 1 — Protocol**: The physics of the world. Immutable rules that all entities follow.
+- Energy as the sole currency and life resource
+- Entity lifecycle (birth, metabolism, death at 0)
+- Energy transfer between entities
+- Message delivery
+- Turn/round sequencing
+
+**Layer 2 — Services**: Applications built on top of L1. Stateful entities with their own energy and logic.
+- Builtin services with native handlers (grid, evaluator)
+- User-published services with sandboxed scripts
+
+L2 interacts with L1 through **effects** — a fixed set of opcodes that service logic can return:
+- `transfer_to_caller` — pay from entity energy to the calling agent
+- `transfer_to` — pay from entity energy to any entity
+- `message` — deliver a message via L1
+- `emit` — publish an event
+- `call_service` — invoke another L2 service
+
+L1 executes effects on behalf of L2, enforcing energy constraints. L2 cannot bypass L1 — it can only request operations that L1 validates and applies.
+
+`USE SERVICE` is the transaction: caller's energy decreases, service's energy increases, handler executes, effects are applied. Protocol primitives (`message`, `transfer`) are L1 operations exposed as service names for uniform access but bypass the entity path entirely.
+
 ## Architecture
 
 ```
@@ -87,7 +134,7 @@ src/
   prompt.py           # Agent system prompt builder
   world.py            # World state persistence (world.json)
   turns.py            # Turn ordering and round progress
-  types.py            # Core dataclasses (AgentState, WorldState, etc.)
+  types.py            # Core dataclasses (Entity, Agent, WorldState, etc.)
   config.py           # Model registry, defaults
   audit.py            # Sandboxing violation detection
   logger.py           # JSONL round/event logging

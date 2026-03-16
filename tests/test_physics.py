@@ -1,11 +1,11 @@
 import os
 import tempfile
 
-from src.types import AgentState, SendRequest, WorldState
+from src.types import Agent, SendRequest, WorldState
 from src.physics import consume_energy, process_transfer, process_send, check_deaths
 
 
-def make_agent(**overrides) -> AgentState:
+def make_agent(**overrides) -> Agent:
     defaults = dict(
         id="agent-0",
         name="Alpha",
@@ -15,10 +15,10 @@ def make_agent(**overrides) -> AgentState:
         invoker="claude",
     )
     defaults.update(overrides)
-    return AgentState(**defaults)
+    return Agent(**defaults)
 
 
-def make_world(agents: list[AgentState]) -> WorldState:
+def make_world(agents: list[Agent]) -> WorldState:
     return WorldState(round=1, agents=agents)
 
 

@@ -9,20 +9,22 @@ from __future__ import annotations
 import os
 
 from .types import GridAgent, GridWorld, MoveRequest, Position
-from .world import create_grid_world, load_grid_world, save_grid_world, get_alive_agents
+from .world import create_grid_world, load_grid_world, save_grid_world
 from .physics import process_move, process_gather, regenerate_resources, GATHER_MAX
 from .prompt import _render_view, _visible_details, VIEW_RADIUS
 
 BUILTIN_SERVICE_NAME = "grid"
-BUILTIN_SERVICE_PRICE = 0.1
 
 
-def _add_to_pool(data_dir: str, amount: float) -> None:
-    grid_dir = os.path.join(data_dir, "grid")
-    grid_world = load_grid_world(grid_dir)
-    if grid_world:
-        grid_world.pool += amount
-        save_grid_world(grid_world, grid_dir)
+def grid_handler(caller_id, caller_name, input_text, round_num, entity, data_dir):
+    """Native handler for grid service. Returns (output, effects, new_state)."""
+    output, energy_gained = handle_grid_service(
+        caller_id, caller_name, input_text, round_num, data_dir,
+    )
+    effects = []
+    if energy_gained > 0:
+        effects.append({"type": "transfer_to_caller", "amount": energy_gained})
+    return output, effects, None
 
 
 def handle_grid_service(
@@ -43,7 +45,7 @@ def handle_grid_service(
     action = cmd[0]
 
     if action == "INIT" and world is None:
-        world = create_grid_world(agent_count=0)
+        world = create_grid_world()
         save_grid_world(world, grid_dir)
         return f"Grid world created: {world.width}x{world.height}.", 0.0
 
@@ -77,8 +79,7 @@ def handle_grid_service(
         return _view(agent, world), 0.0
 
     if action == "STATUS":
-        alive = get_alive_agents(world)
-        header = f"Grid: {world.width}x{world.height}, Round: {world.round}, Population: {len(alive)}\nYou: ({agent.pos.x},{agent.pos.y})"
+        header = f"Grid: {world.width}x{world.height}, Round: {world.round}, Population: {len(world.agents)}\nYou: ({agent.pos.x},{agent.pos.y})"
         return header + "\n\n" + _view(agent, world), 0.0
 
     if action == "MOVE" and len(cmd) >= 2:
@@ -103,8 +104,12 @@ def handle_grid_service(
     return _help_text(), 0.0
 
 
-def is_builtin_service(name: str) -> bool:
-    return name.lower() == BUILTIN_SERVICE_NAME
+def on_eviction(agent_id: str, data_dir: str) -> None:
+    grid_dir = os.path.join(data_dir, "grid")
+    grid_world = load_grid_world(grid_dir)
+    if grid_world:
+        grid_world.agents = [a for a in grid_world.agents if a.id != agent_id]
+        save_grid_world(grid_world, grid_dir)
 
 
 def _help_text() -> str:
@@ -139,10 +144,6 @@ def _add_agent(world: GridWorld, caller_id: str, caller_name: str) -> GridAgent:
                 agent = GridAgent(
                     id=caller_id,
                     name=caller_name,
-                    energy=0.0,
-                    alive=True,
-                    age=0,
-                    invoker="claude",
                     pos=Position(x, y),
                 )
                 world.agents.append(agent)

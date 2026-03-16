@@ -4,14 +4,17 @@ import json
 import os
 
 SERVICE_NAME = "evaluator"
-BUILTIN_SERVICE_PRICE = 0.0
 VOTES_DIR = "eval"
 VOTES_FILE = "votes.json"
 EVAL_BUDGET = 16.0
 
 
-def is_evaluator_service(name: str) -> bool:
-    return name.lower() == SERVICE_NAME
+def evaluator_handler(caller_id, caller_name, input_text, round_num, entity, data_dir):
+    """Native handler for evaluator service. Returns (output, effects, new_state)."""
+    output, _energy = handle_evaluator_service(
+        caller_id, caller_name, input_text, round_num, data_dir,
+    )
+    return output, [], None
 
 
 def handle_evaluator_service(
@@ -65,21 +68,24 @@ def handle_evaluator_service(
 
 
 def distribute_eval_rewards(world, data_dir: str) -> list:
-    """Called at round end. Distributes EVAL_BUDGET proportionally to votes."""
+    """Called at round end. Distributes from evaluator entity energy proportionally to votes."""
     from .types import WorldEvent
+    from .services import load_entity, save_entity
+
+    entity = load_entity(data_dir, SERVICE_NAME)
+    budget = entity.energy if entity else 0.0
 
     votes = _load_votes(data_dir)
     round_key = str(world.round)
     round_votes = votes.get(round_key, {})
 
-    if not round_votes:
+    if not round_votes or budget <= 0:
         return []
 
     # Tally votes by target (resolve name to agent)
     tally = {}
     for vote_data in round_votes.values():
         target = vote_data["target"].lower()
-        # Resolve to agent
         agent = next(
             (a for a in world.agents if a.alive and
              (a.name.lower() == target or a.id.lower() == target)),
@@ -96,9 +102,9 @@ def distribute_eval_rewards(world, data_dir: str) -> list:
     total_distributed = 0.0
 
     for agent_id, count in sorted(tally.items(), key=lambda x: -x[1]):
-        amount = round(EVAL_BUDGET * count / total_votes, 2)
-        if total_distributed + amount > EVAL_BUDGET:
-            amount = round(EVAL_BUDGET - total_distributed, 2)
+        amount = round(budget * count / total_votes, 2)
+        if total_distributed + amount > budget:
+            amount = round(budget - total_distributed, 2)
         if amount <= 0:
             continue
 
@@ -113,6 +119,10 @@ def distribute_eval_rewards(world, data_dir: str) -> list:
             details={"amount": amount, "source": "peer_eval", "votes": count},
         ))
         print(f"  [peer-eval] {agent.name}: +{amount:.1f} ({count} vote(s))")
+
+    if entity and total_distributed > 0:
+        entity.energy -= total_distributed
+        save_entity(entity, data_dir)
 
     if not events:
         print(f"  [peer-eval] no valid votes")

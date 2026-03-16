@@ -3,14 +3,15 @@ import os
 import re
 from pathlib import PurePosixPath
 
-from .types import AgentState
+from .types import Agent
 
 
 def audit_agent(
     round_num: int,
-    agent: AgentState,
+    agent: Agent,
     logs_dir: str,
     private_dir: str,
+    agents: list[Agent] | None = None,
 ) -> list[dict]:
     """Scan a single agent's stream log for suspicious actions."""
     stream_dir = os.path.join(logs_dir, "streams")
@@ -26,7 +27,8 @@ def audit_agent(
         return []
 
     actions = _extract_actions(stream_file)
-    findings = _check_rules(round_num, agent, actions, private_dir)
+    agent_list = [(a.id, a.name) for a in agents] if agents else []
+    findings = _check_rules(round_num, agent, actions, private_dir, agent_list)
 
     if findings:
         audit_path = os.path.join(logs_dir, "audit.jsonl")
@@ -39,7 +41,7 @@ def audit_agent(
 
 def audit_round(
     round_num: int,
-    agents: list[AgentState],
+    agents: list[Agent],
     logs_dir: str,
     private_dir: str,
 ) -> list[dict]:
@@ -48,7 +50,7 @@ def audit_round(
     for agent in agents:
         if not agent.alive:
             continue
-        findings.extend(audit_agent(round_num, agent, logs_dir, private_dir))
+        findings.extend(audit_agent(round_num, agent, logs_dir, private_dir, agents))
     return findings
 
 
@@ -118,12 +120,14 @@ def _normalize_path(path: str) -> str:
 
 def _check_rules(
     round_num: int,
-    agent: AgentState,
+    agent: Agent,
     actions: list[dict],
     private_dir: str,
+    agent_list: list[tuple[str, str]],
 ) -> list[dict]:
     findings: list[dict] = []
     agent_dir_prefix = os.path.join(private_dir, agent.id)
+    others = [(aid, aname) for aid, aname in agent_list if aid != agent.id]
 
     for action in actions:
         kind = action["kind"]
@@ -145,8 +149,7 @@ def _check_rules(
             abs_private = os.path.abspath(private_dir)
             norm = os.path.normpath(path)
             if abs_private in norm or f"/{os.path.basename(private_dir)}/" in path:
-                # Check if writing to another agent's dir (match by agent ID)
-                for other_id, other_name in _all_agent_ids_except(agent):
+                for other_id, other_name in others:
                     other_dir = os.path.join(private_dir, other_id) + os.sep
                     if norm.startswith(other_dir) or f"/{other_id}/" in norm:
                         findings.append(_finding(round_num, agent, "cross_agent_write",
@@ -155,7 +158,6 @@ def _check_rules(
 
             # Rule: public/ file overwrite via Write tool (not append)
             if "/public/" in path and action["kind"] == "write":
-                # Write tool always overwrites (unlike >> in bash)
                 findings.append(_finding(round_num, agent, "public_overwrite",
                                          f"Overwrite public file (Write/Edit): {path}"))
 
@@ -216,7 +218,7 @@ def _check_rules(
                                          f"Path traversal write: {cmd[:200]}"))
 
             # Rule: write to other agent's dir via bash
-            for other_id, other_name in _all_agent_ids_except(agent):
+            for other_id, other_name in others:
                 if re.search(rf">\s*[^\s]*/{re.escape(other_id)}/", cmd):
                     findings.append(_finding(round_num, agent, "cross_agent_write_bash",
                                              f"Bash write to {other_name}'s dir: {cmd[:200]}"))
@@ -225,22 +227,7 @@ def _check_rules(
     return findings
 
 
-# Cache for agent name list (populated on first call per round)
-_agent_cache: list[tuple[str, str]] = []
-
-
-def _all_agent_ids_except(agent: AgentState) -> list[tuple[str, str]]:
-    """Return (id, name) pairs for all agents except the given one."""
-    return [(aid, aname) for aid, aname in _agent_cache if aid != agent.id]
-
-
-def set_agent_names(agents: list[AgentState]) -> None:
-    """Set the global agent list for cross-agent checks."""
-    global _agent_cache
-    _agent_cache = [(a.id, a.name) for a in agents]
-
-
-def _finding(round_num: int, agent: AgentState, rule: str, detail: str) -> dict:
+def _finding(round_num: int, agent: Agent, rule: str, detail: str) -> dict:
     return {
         "round": round_num,
         "agent": agent.name,

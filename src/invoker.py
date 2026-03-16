@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 from .types import (
-    AgentState, AgentCommands, SendRequest, TransferRequest,
+    Agent, AgentCommands, SendRequest, TransferRequest,
     PublishServiceRequest, UseServiceRequest, UnpublishServiceRequest,
     UpdateServiceRequest, SubscribeRequest, UnsubscribeRequest, WorldState,
 )
@@ -26,7 +26,7 @@ class InvokeResult:
 
 
 def invoke_agent(
-    agent: AgentState,
+    agent: Agent,
     world: WorldState,
     public_dir: str,
     private_dir: str,
@@ -50,6 +50,7 @@ def invoke_agent(
 
 MAX_USES_PER_TURN = 16
 MAX_PUBLISHES_PER_TURN = 2
+MAX_SENDS_PER_TURN = 16
 
 
 def _clear_command_files(agent_dir: str) -> None:
@@ -258,7 +259,7 @@ def _parse_legacy_commands(text: str) -> AgentCommands:
 
     return cmds
 
-def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
+def _invoke_claude(prompt: str, agent: Agent, model: str, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
     fd, prompt_file = tempfile.mkstemp(prefix=f"systems-prompt-{agent.id}-", suffix=".txt")
     stream_dir = os.path.join(logs_dir, "streams")
     os.makedirs(stream_dir, exist_ok=True)
@@ -301,7 +302,7 @@ def _invoke_claude(prompt: str, agent: AgentState, model: str, timeout: int, log
             pass
 
 
-def _invoke_codex(prompt: str, agent: AgentState, model: str, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
+def _invoke_codex(prompt: str, agent: Agent, model: str, timeout: int, logs_dir: str, round_num: int, cwd: str = ".") -> InvokeResult:
     fd, prompt_file = tempfile.mkstemp(prefix=f"systems-prompt-{agent.id}-", suffix=".txt")
     fd2, output_file = tempfile.mkstemp(prefix=f"systems-output-{agent.id}-", suffix=".txt")
     os.close(fd2)
@@ -370,22 +371,6 @@ def _extract_text_from_claude_stream(jsonl: str) -> str:
 
 
 
-def _extract_last_text_from_claude_stream(jsonl: str) -> str:
-    """Extract only the last text block from Claude stream for action parsing."""
-    last_text = ""
-    for line in jsonl.splitlines():
-        if not line.strip():
-            continue
-        try:
-            obj = json.loads(line)
-            if obj.get("type") == "assistant" and "message" in obj:
-                for block in obj["message"].get("content", []):
-                    if block.get("type") == "text" and block.get("text", "").strip():
-                        last_text = block["text"]
-        except json.JSONDecodeError:
-            continue
-    return last_text
-
 def _extract_cost_from_claude_stream(jsonl: str) -> float:
     for line in jsonl.splitlines():
         if not line.strip():
@@ -428,13 +413,13 @@ def _parse_legacy_transfer(raw: str) -> TransferRequest | None:
     return TransferRequest(to=to, amount=amount)
 
 
-def _handle_error(err: Exception, agent: AgentState) -> InvokeResult:
+def _handle_error(err: Exception, agent: Agent) -> InvokeResult:
     message = str(err)[:200]
     print(f"  [{agent.name}] invocation error: {message}")
     return InvokeResult(raw_output=f"ERROR: {str(err)[:500]}", failed=True)
 
 
-def _dry_run_response(agent: AgentState) -> InvokeResult:
+def _dry_run_response(agent: Agent) -> InvokeResult:
     import random
     actions = [
         (f"I am {agent.name}. I exist.", AgentCommands()),

@@ -6,7 +6,10 @@ import shutil
 import stat
 from dataclasses import asdict, dataclass, field
 
-from .types import WorldState
+from .types import Entity, WorldState
+from .grid.service import on_eviction as _grid_eviction
+
+_EVICTION_HANDLERS = {"grid": _grid_eviction}
 
 SERVICES_DIR = "services"
 MAX_SERVICES_PER_AGENT = 2
@@ -15,9 +18,8 @@ SUBSCRIPTIONS_FILE = "subscriptions.json"
 VALID_HOOKS = {"on_round_end", "on_agent_death", "on_transfer"}
 
 
-@dataclass
-class ServiceEntity:
-    name: str
+@dataclass(kw_only=True)
+class Service(Entity):
     provider_id: str
     provider_name: str
     script: str
@@ -27,11 +29,7 @@ class ServiceEntity:
     call_count: int = 0
     subscription_fee: float = 0.0
     hooks: list[str] = field(default_factory=list)
-    balance: float = 0.0
     state: dict = field(default_factory=dict)
-
-
-ServiceEntry = ServiceEntity
 
 
 # ---------------------------------------------------------------------------
@@ -46,17 +44,19 @@ def _entity_path(data_dir: str, name: str) -> str:
     return os.path.join(_service_dir(data_dir, name), "entity.json")
 
 
-def load_entity(data_dir: str, name: str) -> ServiceEntity | None:
+def load_entity(data_dir: str, name: str) -> Service | None:
     path = _entity_path(data_dir, name)
     if not os.path.exists(path):
         return None
     with open(path) as f:
         data = json.load(f)
-    known = ServiceEntity.__dataclass_fields__
-    return ServiceEntity(**{k: v for k, v in data.items() if k in known})
+    if "balance" in data and "energy" not in data:
+        data["energy"] = data.pop("balance")
+    known = Service.__dataclass_fields__
+    return Service(**{k: v for k, v in data.items() if k in known})
 
 
-def save_entity(entity: ServiceEntity, data_dir: str) -> None:
+def save_entity(entity: Service, data_dir: str) -> None:
     svc_dir = _service_dir(data_dir, entity.name)
     os.makedirs(svc_dir, exist_ok=True)
     with open(_entity_path(data_dir, entity.name), "w") as f:
@@ -64,7 +64,7 @@ def save_entity(entity: ServiceEntity, data_dir: str) -> None:
     _publish_mirror(data_dir)
 
 
-def load_all_entities(data_dir: str) -> list[ServiceEntity]:
+def load_all_entities(data_dir: str) -> list[Service]:
     svc_root = os.path.join(data_dir, SERVICES_DIR)
     if not os.path.isdir(svc_root):
         return []
@@ -99,7 +99,7 @@ def _publish_mirror(data_dir: str) -> None:
             pass
 
 
-def find_service(name: str, data_dir: str) -> ServiceEntity | None:
+def find_service(name: str, data_dir: str) -> Service | None:
     return load_entity(data_dir, name.lower())
 
 
@@ -122,7 +122,7 @@ def install_script(data_dir: str, service_name: str, source_path: str) -> str | 
     return dest
 
 
-def get_script_path(data_dir: str, entity: ServiceEntity) -> str:
+def get_script_path(data_dir: str, entity: Service) -> str:
     return os.path.join(_service_dir(data_dir, entity.name), entity.script)
 
 
@@ -131,7 +131,7 @@ def get_script_path(data_dir: str, entity: ServiceEntity) -> str:
 # ---------------------------------------------------------------------------
 
 BUILTIN_SERVICES = [
-    ServiceEntity(
+    Service(
         name="message",
         provider_id="system",
         provider_name="Engine",
@@ -140,7 +140,7 @@ BUILTIN_SERVICES = [
         description="Send a message to another agent. Input: {\"to\": \"<name-or-id>\", \"message\": \"<text>\"}. Max 500 chars. Delivered to recipient's inbox.md.",
         round_published=0,
     ),
-    ServiceEntity(
+    Service(
         name="transfer",
         provider_id="system",
         provider_name="Engine",
@@ -149,7 +149,7 @@ BUILTIN_SERVICES = [
         description="Transfer energy to another agent. Input: {\"to\": \"<name-or-id>\", \"amount\": <number>}. The amount is deducted from your energy and added to the recipient.",
         round_published=0,
     ),
-    ServiceEntity(
+    Service(
         name="grid",
         provider_id="system",
         provider_name="Engine",
@@ -159,7 +159,7 @@ BUILTIN_SERVICES = [
         round_published=0,
         subscription_fee=0.1,
     ),
-    ServiceEntity(
+    Service(
         name="evaluator",
         provider_id="system",
         provider_name="Engine",
@@ -272,24 +272,16 @@ def collect_subscription_fees(world: WorldState, data_dir: str) -> list[tuple[st
 
 
 def _pool_fee(data_dir: str, service_name: str, amount: float) -> None:
-    if service_name == "grid":
-        from .grid.service import _add_to_pool
-        _add_to_pool(data_dir, amount)
-    else:
-        entity = load_entity(data_dir, service_name)
-        if entity:
-            entity.balance += amount
-            save_entity(entity, data_dir)
+    entity = load_entity(data_dir, service_name)
+    if entity:
+        entity.energy += amount
+        save_entity(entity, data_dir)
 
 
 def _on_eviction(data_dir: str, service_name: str, agent_id: str) -> None:
-    if service_name == "grid":
-        from .grid.world import load_grid_world, save_grid_world
-        grid_dir = os.path.join(data_dir, "grid")
-        grid_world = load_grid_world(grid_dir)
-        if grid_world:
-            grid_world.agents = [a for a in grid_world.agents if a.id != agent_id]
-            save_grid_world(grid_world, grid_dir)
+    handler = _EVICTION_HANDLERS.get(service_name)
+    if handler:
+        handler(agent_id, data_dir)
 
 
 def remove_dead_agent_services(world: WorldState, data_dir: str) -> list[str]:
@@ -333,7 +325,7 @@ def run_hooks(
         script_path = get_script_path(data_dir, entity)
         output_raw, success = run_service_script(
             script_path, "system", "Engine", "", world.round,
-            pool_balance=entity.balance,
+            pool_energy=entity.energy,
             state=entity.state, trigger=hook_name, context=context,
         )
 

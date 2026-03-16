@@ -1,7 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .types import AgentState, SimulationConfig, RoundResult, WorldEvent, WorldState
+from .types import Agent, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
 from .physics import (
     consume_energy, process_transfer, process_send, check_deaths, random_energy_reward,
@@ -10,7 +10,7 @@ from .physics import (
 )
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
-from .audit import audit_agent, audit_round, set_agent_names
+from .audit import audit_agent, audit_round
 from .turns import load_turns, save_turns, delete_turns, create_turns
 from .spawner import (
     snapshot_self_prompts, deploy_self_prompts, update_agent_prompt,
@@ -25,14 +25,14 @@ from .commands import write_commands_file
 # ---------------------------------------------------------------------------
 
 def _invoke_worker(
-    agent: AgentState,
+    agent: Agent,
     world: WorldState,
     public_dir: str,
     private_dir: str,
     timeout: int,
     dry_run: bool,
     logs_dir: str,
-) -> tuple[AgentState, InvokeResult]:
+) -> tuple[Agent, InvokeResult]:
     print(f"  [{agent.name}] invoking ({agent.invoker}/{agent.model})...", flush=True)
     result = invoke_agent(agent, world, public_dir, private_dir, timeout, dry_run, logs_dir)
     if result.failed:
@@ -71,7 +71,7 @@ def _invoke_worker(
 
 
 def _process_agent_result(
-    agent: AgentState, result: InvokeResult, energy_before: float,
+    agent: Agent, result: InvokeResult, energy_before: float,
     world: WorldState, config: SimulationConfig,
 ) -> RoundResult:
     all_events: list[WorldEvent] = []
@@ -148,6 +148,13 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
             from .events import clear_events
             clear_events(config.data_dir)
             save_turns(turns, config.data_dir)
+
+            from .services import load_entity, save_entity
+            from .eval_service import EVAL_BUDGET
+            eval_entity = load_entity(config.data_dir, "evaluator")
+            if eval_entity:
+                eval_entity.energy += EVAL_BUDGET
+                save_entity(eval_entity, config.data_dir)
         authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
         if not config.dry_run:
             deploy_self_prompts(authorized_prompts, config.private_dir)
@@ -224,7 +231,8 @@ def _finalize_round(
         for event in respawn_events:
             log_event(event)
 
-        for d_invoker, d_model in [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]:
+        from .config import TOP_MODELS
+        for d_invoker, d_model in TOP_MODELS:
             design_events = designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
             for event in design_events:
                 log_event(event)
@@ -294,8 +302,7 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
     print(f"  [{agent.name}] E={energy_before:.2f} -> {agent.energy:.2f}")
 
     # Audit immediately after turn
-    set_agent_names(world.agents)
-    findings = audit_agent(world.round, agent, config.logs_dir, config.private_dir)
+    findings = audit_agent(world.round, agent, config.logs_dir, config.private_dir, world.agents)
     if findings:
         print(f"  [audit] {len(findings)} suspicious action(s):")
         for f in findings:
@@ -327,7 +334,7 @@ def run_round(
 
     # Invoke sequentially — concurrent execution allows agents to tamper
     # with each other's private directories via path traversal.
-    invoke_results: dict[str, tuple[AgentState, InvokeResult, float]] = {}
+    invoke_results: dict[str, tuple[Agent, InvokeResult, float]] = {}
     with ThreadPoolExecutor(max_workers=1) as pool:
         futures = {
             pool.submit(
@@ -355,7 +362,6 @@ def run_round(
     deploy_self_prompts(authorized_prompts, config.private_dir)
 
     # Audit all agents
-    set_agent_names(world.agents)
     audit_findings = audit_round(world.round, world.agents, config.logs_dir, config.private_dir)
     if audit_findings:
         print(f"  [audit] {len(audit_findings)} suspicious action(s) detected:")
