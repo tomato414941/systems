@@ -20,7 +20,7 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec("use_service", [
         CommandParam("name", "<name>"),
         CommandParam("input", "<text>"),
-    ], limits="max 16/turn. Results in service_results/. Builtin services: message, transfer, grid, evaluator."),
+    ], limits='max 16/turn. Results in service_results/. Builtin: message, transfer, grid, evaluator. Add "view": true for free read-only query (no effects).'),
     CommandSpec("publish_service", [
         CommandParam("name", "<name>"),
         CommandParam("script", "<filename>"),

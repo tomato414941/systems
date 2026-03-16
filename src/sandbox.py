@@ -15,15 +15,22 @@ def run_service_script(
     round_num: int,
     pool_balance: float = 0.0,
     price: float = 0.0,
+    state: dict | None = None,
+    trigger: str = "call",
+    context: dict | None = None,
 ) -> tuple[str, bool]:
     """Execute a service script. Returns (output, success)."""
     input_json = json.dumps({
+        "trigger": trigger,
         "caller_id": caller_id,
         "caller_name": caller_name,
         "input": input_text,
         "round": round_num,
+        "balance": pool_balance,
         "pool_balance": pool_balance,
         "price": price,
+        "state": state or {},
+        "context": context or {},
     })
 
     try:
@@ -45,15 +52,15 @@ def run_service_script(
         return f"ERROR: {str(e)[:200]}", False
 
 
-def parse_service_output(raw: str) -> tuple[str, list[dict]]:
-    """Parse script output. Returns (display_text, effects_list).
+def parse_service_output(raw: str) -> tuple[str, list[dict], dict | None]:
+    """Parse script output. Returns (display_text, effects_list, new_state).
 
-    If output is valid JSON with "output" key, parse effects.
+    If output is valid JSON with "output" key, parse effects and state.
     Otherwise treat entire output as plain text (backward compat).
     """
     stripped = raw.strip()
     if not stripped.startswith("{"):
-        return raw, []
+        return raw, [], None
     try:
         data = json.loads(stripped)
         if isinstance(data, dict) and "output" in data:
@@ -61,7 +68,10 @@ def parse_service_output(raw: str) -> tuple[str, list[dict]]:
             effects = data.get("effects", [])
             if not isinstance(effects, list):
                 effects = []
-            return output, effects
-        return raw, []
+            new_state = data.get("state", None)
+            if new_state is not None and not isinstance(new_state, dict):
+                new_state = None
+            return output, effects, new_state
+        return raw, [], None
     except (json.JSONDecodeError, ValueError):
-        return raw, []
+        return raw, [], None

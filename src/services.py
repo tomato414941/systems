@@ -256,6 +256,22 @@ def _on_eviction(data_dir: str, service_name: str, agent_id: str) -> None:
             save_grid_world(grid_world, grid_dir)
 
 
+def load_service_state(data_dir: str, service_name: str) -> dict:
+    state_path = os.path.join(data_dir, SERVICES_DIR, service_name, "state.json")
+    if not os.path.exists(state_path):
+        return {}
+    with open(state_path) as f:
+        return json.load(f)
+
+
+def save_service_state(data_dir: str, service_name: str, state: dict) -> None:
+    svc_dir = os.path.join(data_dir, SERVICES_DIR, service_name)
+    os.makedirs(svc_dir, exist_ok=True)
+    state_path = os.path.join(svc_dir, "state.json")
+    with open(state_path, "w") as f:
+        json.dump(state, f, indent=2)
+
+
 def find_service(name: str, data_dir: str) -> ServiceEntry | None:
     for entry in load_services(data_dir):
         if entry.name.lower() == name.lower():
@@ -306,13 +322,12 @@ def run_hooks(
 
         script_path = get_script_path(data_dir, entry)
         pool_balance = get_pool(entry.name, data_dir)
-
-        import json as _json
-        hook_input = _json.dumps({"hook": hook_name, **context})
+        svc_state = load_service_state(data_dir, entry.name)
 
         output_raw, success = run_service_script(
-            script_path, "system", "Engine", hook_input, world.round,
+            script_path, "system", "Engine", "", world.round,
             pool_balance=pool_balance,
+            state=svc_state, trigger=hook_name, context=context,
         )
 
         if not success:
@@ -323,13 +338,14 @@ def run_hooks(
             ))
             continue
 
-        display_text, effects = parse_service_output(output_raw)
+        display_text, effects, new_state = parse_service_output(output_raw)
+        if new_state is not None:
+            save_service_state(data_dir, entry.name, new_state)
 
         if effects:
-            # Hooks have no caller, so pass a dummy; from_hook=True disables transfer_to_caller
             effect_events = execute_effects(
                 effects, None, entry.name, world, data_dir, private_dir,
-                from_hook=True,
+                from_hook=True, call_depth=0,
             )
             events.extend(effect_events)
 

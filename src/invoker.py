@@ -159,6 +159,7 @@ def _parse_json_commands(raw: str) -> AgentCommands:
                 cmds.use.append(UseServiceRequest(
                     name=str(entry["name"]),
                     input=str(entry.get("input", "")),
+                    view=bool(entry.get("view", False)),
                 ))
             except KeyError:
                 pass

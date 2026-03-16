@@ -12,8 +12,9 @@ from .services import (
     remove_dead_agent_services, install_script, get_script_path, remove_service_files,
     ServiceEntry, MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT,
 )
-from .sandbox import run_service_script
+from .sandbox import run_service_script, parse_service_output
 from .pools import add_to_pool, get_pool, deduct_from_pool
+from .events import append_event
 
 
 FIXED_TURN_COST = 1.0
@@ -281,6 +282,34 @@ def process_use_service(
     entry = find_service(request.name, data_dir)
     if entry is None:
         return []
+
+    from .services import load_service_state, save_service_state
+
+    # View mode: read-only, no cost, no effects, no state change
+    if request.view:
+        pool_balance = get_pool(entry.name, data_dir)
+        svc_state = load_service_state(data_dir, entry.name)
+        script_path = get_script_path(data_dir, entry)
+        output_raw, success = run_service_script(
+            script_path, agent.id, agent.name, request.input, world.round,
+            pool_balance=pool_balance, price=0.0,
+            state=svc_state, trigger="view",
+        )
+        if not success:
+            return [WorldEvent(
+                round=world.round, type="use_service", agent_id=agent.id,
+                details={"service": request.name, "success": False, "view": True, "error": output_raw[:200]},
+            )]
+        display_text, _, _ = parse_service_output(output_raw)
+        results_dir = os.path.join(private_dir, agent.id, "service_results")
+        os.makedirs(results_dir, exist_ok=True)
+        with open(os.path.join(results_dir, f"{entry.name}.txt"), "w") as f:
+            f.write(display_text)
+        return [WorldEvent(
+            round=world.round, type="use_service", agent_id=agent.id,
+            details={"service": request.name, "success": True, "view": True, "price": 0.0},
+        )]
+
     if entry.provider_id == agent.id:
         return []
     if agent.energy < entry.price:
@@ -294,10 +323,12 @@ def process_use_service(
     add_to_pool(entry.name, entry.price, data_dir)
 
     pool_balance = get_pool(entry.name, data_dir)
+    svc_state = load_service_state(data_dir, entry.name)
     script_path = get_script_path(data_dir, entry)
     output_raw, success = run_service_script(
         script_path, agent.id, agent.name, request.input, world.round,
         pool_balance=pool_balance, price=entry.price,
+        state=svc_state, trigger="call",
     )
 
     if not success:
@@ -310,8 +341,9 @@ def process_use_service(
             details={"service": request.name, "success": False, "error": output_raw[:200]},
         )]
 
-    from .sandbox import parse_service_output
-    display_text, effects = parse_service_output(output_raw)
+    display_text, effects, new_state = parse_service_output(output_raw)
+    if new_state is not None:
+        save_service_state(data_dir, entry.name, new_state)
 
     all_events = [WorldEvent(
         round=world.round,
@@ -347,6 +379,9 @@ def process_use_service(
     return all_events
 
 
+MAX_CALL_DEPTH = 3
+
+
 def execute_effects(
     effects: list[dict],
     caller: AgentState,
@@ -355,8 +390,11 @@ def execute_effects(
     data_dir: str,
     private_dir: str,
     from_hook: bool = False,
+    call_depth: int = 0,
 ) -> list[WorldEvent]:
     """Execute effects from a service script, spending from the service pool."""
+    from .services import load_service_state, save_service_state
+
     events: list[WorldEvent] = []
     pool_balance = get_pool(service_name, data_dir)
     spent = 0.0
@@ -414,6 +452,78 @@ def execute_effects(
                 round=world.round, type="service_effect", agent_id=receiver.id,
                 details={"service": service_name, "effect": "message", "to": receiver.id},
             ))
+
+        elif etype == "call_service":
+            if call_depth >= MAX_CALL_DEPTH:
+                continue
+            target_name = str(eff.get("name", ""))
+            call_input = str(eff.get("input", ""))
+            if not target_name or target_name == service_name:
+                continue
+            target_entry = find_service(target_name, data_dir)
+            if target_entry is None or target_entry.provider_id == "system":
+                continue
+            target_provider = next(
+                (a for a in world.agents if a.id == target_entry.provider_id and a.alive), None)
+            if target_provider is None:
+                continue
+            call_cost = target_entry.price
+            if call_cost > pool_balance - spent:
+                continue
+            spent += call_cost
+            add_to_pool(target_entry.name, call_cost, data_dir)
+            target_pool = get_pool(target_entry.name, data_dir)
+            target_state = load_service_state(data_dir, target_entry.name)
+            target_script = get_script_path(data_dir, target_entry)
+            output_raw, success = run_service_script(
+                target_script, f"service:{service_name}", service_name,
+                call_input, world.round,
+                pool_balance=target_pool, price=target_entry.price,
+                state=target_state, trigger="service_call",
+            )
+            events.append(WorldEvent(
+                round=world.round, type="service_effect",
+                agent_id=target_entry.provider_id,
+                details={"service": target_entry.name, "effect": "call_service",
+                         "caller_service": service_name, "success": success,
+                         "depth": call_depth + 1},
+            ))
+            if success:
+                display, sub_effects, new_target_state = parse_service_output(output_raw)
+                if new_target_state is not None:
+                    save_service_state(data_dir, target_entry.name, new_target_state)
+                calling_state = load_service_state(data_dir, service_name)
+                call_results = calling_state.get("_call_results", {})
+                call_results[target_name] = display[:2000]
+                calling_state["_call_results"] = call_results
+                save_service_state(data_dir, service_name, calling_state)
+                if sub_effects:
+                    events.extend(execute_effects(
+                        sub_effects, caller, target_entry.name, world,
+                        data_dir, private_dir, from_hook=from_hook,
+                        call_depth=call_depth + 1,
+                    ))
+                entries = load_services(data_dir)
+                for e in entries:
+                    if e.name == target_entry.name:
+                        e.call_count += 1
+                        break
+                save_services(entries, data_dir)
+
+        elif etype == "emit":
+            event_name = str(eff.get("name", ""))[:100]
+            event_data = eff.get("data", {})
+            if not isinstance(event_data, dict):
+                event_data = {"value": str(event_data)[:500]}
+            safe_data = {}
+            for k, v in list(event_data.items())[:20]:
+                safe_data[str(k)[:50]] = str(v)[:500] if not isinstance(v, (int, float, bool)) else v
+            if event_name:
+                append_event(data_dir, service_name, event_name, safe_data, world.round)
+                events.append(WorldEvent(
+                    round=world.round, type="service_effect", agent_id="system",
+                    details={"service": service_name, "effect": "emit", "event": event_name},
+                ))
 
     if spent > 0:
         deduct_from_pool(service_name, spent, data_dir)

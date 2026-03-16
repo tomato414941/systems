@@ -41,6 +41,7 @@ class PublishServiceRequest:
 class UseServiceRequest:
     name: str
     input: str
+    view: bool = False
 
 
 @dataclass
@@ -85,7 +86,7 @@ class WorldState:
 @dataclass
 class WorldEvent:
     round: int
-    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service", "subscribe", "unsubscribe", "subscription_fee"]
+    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service", "subscribe", "unsubscribe", "subscription_fee", "service_effect"]
     agent_id: str
     details: dict[str, Any] = field(default_factory=dict)
 

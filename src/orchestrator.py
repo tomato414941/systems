@@ -145,6 +145,8 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
         world.round += 1
         turns = create_turns(world)
         if not config.dry_run:
+            from .events import clear_events
+            clear_events(config.data_dir)
             save_turns(turns, config.data_dir)
         authorized_prompts = snapshot_self_prompts(world.agents, config.private_dir)
         if not config.dry_run:
