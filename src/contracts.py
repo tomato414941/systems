@@ -390,3 +390,52 @@ def cleanup_dead_services(world: WorldState, data_dir: str) -> list[WorldEvent]:
         WorldEvent(round=world.round, type="unpublish_service", agent_id="system", details={"service": name, "reason": "provider_dead"})
         for name in removed
     ]
+
+
+def run_hooks(
+    hook_name: str,
+    context: dict,
+    world: WorldState,
+    data_dir: str,
+    private_dir: str,
+) -> list[WorldEvent]:
+    if hook_name not in VALID_HOOKS:
+        return []
+
+    entities = load_all_entities(data_dir)
+    events: list[WorldEvent] = []
+
+    for entity in entities:
+        if hook_name not in entity.hooks:
+            continue
+        if entity.provider_id == "system":
+            continue
+
+        script_path = get_script_path(data_dir, entity)
+        output_raw, success = run_service_script(
+            script_path, "system", "Engine", "", world.round,
+            pool_energy=entity.energy,
+            state=entity.state, trigger=hook_name, context=context,
+        )
+
+        if not success:
+            events.append(WorldEvent(
+                round=world.round, type="service_effect",
+                agent_id=entity.provider_id,
+                details={"service": entity.name, "hook": hook_name, "error": output_raw[:200]},
+            ))
+            continue
+
+        display_text, effects, new_state = parse_service_output(output_raw)
+        if new_state is not None:
+            entity.state = new_state
+
+        if effects:
+            events.extend(execute_effects(
+                effects, None, entity, world, data_dir, private_dir,
+                from_hook=True, call_depth=0,
+            ))
+
+        save_entity(entity, data_dir)
+
+    return events

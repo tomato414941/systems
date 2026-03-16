@@ -51,7 +51,7 @@ MAX_PUBLISHES_PER_TURN = 2
 
 
 def _clear_command_files(agent_dir: str) -> None:
-    for fname in (COMMANDS_FILE, "commands.txt", "transfer.txt"):
+    for fname in (COMMANDS_FILE,):
         path = os.path.join(agent_dir, fname)
         if os.path.exists(path):
             os.unlink(path)

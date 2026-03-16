@@ -179,7 +179,8 @@ def _finalize_round(
         for event in peer_events:
             log_event(event)
 
-    from .services import collect_subscription_fees, run_hooks
+    from .services import collect_subscription_fees
+    from .contracts import run_hooks
 
     # Lifecycle hooks: on_round_end
     hook_events = run_hooks(

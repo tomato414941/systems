@@ -99,16 +99,16 @@ Entity
 
 ### Two-Layer Architecture
 
-**Layer 1 — Protocol**: The physics of the world. Immutable rules that all entities follow.
-- Energy as the sole currency and life resource
+**Layer 1 — Protocol** (`physics.py`): The physics of the world. Immutable rules that all entities follow.
+- `transfer_energy(source, target, amount)` — the universal energy transfer primitive
 - Entity lifecycle (birth, metabolism, death at 0)
-- Energy transfer between entities
-- Message delivery
-- Turn/round sequencing
+- Message delivery (`process_send`)
+- Agent-to-agent transfer (`process_transfer`)
 
-**Layer 2 — Services**: Applications built on top of L1. Stateful entities with their own energy and logic.
+**Layer 2 — Services** (`contracts.py`): Applications built on top of L1. Stateful entities with their own energy and logic.
 - Builtin services with native handlers (grid, evaluator)
 - User-published services with sandboxed scripts
+- Lifecycle hooks (services can register for `on_round_end`, `on_agent_death`)
 
 L2 interacts with L1 through **effects** — a fixed set of opcodes that service logic can return:
 - `transfer_to_caller` — pay from entity energy to the calling agent
@@ -120,6 +120,8 @@ L2 interacts with L1 through **effects** — a fixed set of opcodes that service
 L1 executes effects on behalf of L2, enforcing energy constraints. L2 cannot bypass L1 — it can only request operations that L1 validates and applies.
 
 `USE SERVICE` is the transaction: caller's energy decreases, service's energy increases, handler executes, effects are applied. Protocol primitives (`message`, `transfer`) are L1 operations exposed as service names for uniform access but bypass the entity path entirely.
+
+**Orchestrator** (`orchestrator.py`): The scheduler that drives L1. Not a separate layer — analogous to the consensus client in Ethereum. Handles round/turn sequencing, agent invocation, round finalization, and spawning.
 
 ## Architecture
 
