@@ -50,8 +50,6 @@ def load_entity(data_dir: str, name: str) -> Service | None:
         return None
     with open(path) as f:
         data = json.load(f)
-    if "balance" in data and "energy" not in data:
-        data["energy"] = data.pop("balance")
     known = Service.__dataclass_fields__
     return Service(**{k: v for k, v in data.items() if k in known})
 

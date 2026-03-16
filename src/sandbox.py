@@ -27,8 +27,6 @@ def run_service_script(
         "input": input_text,
         "round": round_num,
         "energy": pool_energy,
-        "balance": pool_energy,
-        "pool_balance": pool_energy,
         "price": price,
         "state": state or {},
         "context": context or {},
