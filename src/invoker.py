@@ -148,6 +148,8 @@ def _parse_json_commands(raw: str) -> AgentCommands:
                     script=str(entry["script"]),
                     price=float(entry["price"]),
                     description=str(entry["description"])[:200],
+                    subscription_fee=float(entry.get("subscription_fee", 0.0)),
+                    hooks=list(entry.get("hooks", [])),
                 ))
             except (KeyError, ValueError):
                 pass

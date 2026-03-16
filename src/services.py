@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 import stat
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from .types import WorldState
 
@@ -15,6 +15,9 @@ MIN_SERVICE_PRICE = 0.5
 
 
 SUBSCRIPTIONS_FILE = "subscriptions.json"
+
+
+VALID_HOOKS = {"on_round_end", "on_agent_death", "on_transfer"}
 
 
 @dataclass
@@ -28,6 +31,7 @@ class ServiceEntry:
     round_published: int
     call_count: int = 0
     subscription_fee: float = 0.0
+    hooks: list[str] = field(default_factory=list)
 
 
 def _services_path(data_dir: str) -> str:
@@ -273,3 +277,60 @@ def remove_dead_agent_services(world: WorldState, data_dir: str) -> list[str]:
         entries = [e for e in entries if e.provider_id in alive_ids]
         save_services(entries, data_dir)
     return removed
+
+
+def run_hooks(
+    hook_name: str,
+    context: dict,
+    world: WorldState,
+    data_dir: str,
+    private_dir: str,
+) -> list["WorldEvent"]:
+    """Run all services registered for this hook. Returns effect events."""
+    if hook_name not in VALID_HOOKS:
+        return []
+
+    from .types import WorldEvent
+    from .sandbox import run_service_script, parse_service_output
+    from .pools import get_pool
+    from .physics import execute_effects
+
+    entries = load_services(data_dir)
+    events: list[WorldEvent] = []
+
+    for entry in entries:
+        if hook_name not in entry.hooks:
+            continue
+        if entry.provider_id == "system":
+            continue
+
+        script_path = get_script_path(data_dir, entry)
+        pool_balance = get_pool(entry.name, data_dir)
+
+        import json as _json
+        hook_input = _json.dumps({"hook": hook_name, **context})
+
+        output_raw, success = run_service_script(
+            script_path, "system", "Engine", hook_input, world.round,
+            pool_balance=pool_balance,
+        )
+
+        if not success:
+            events.append(WorldEvent(
+                round=world.round, type="service_effect",
+                agent_id=entry.provider_id,
+                details={"service": entry.name, "hook": hook_name, "error": output_raw[:200]},
+            ))
+            continue
+
+        display_text, effects = parse_service_output(output_raw)
+
+        if effects:
+            # Hooks have no caller, so pass a dummy; from_hook=True disables transfer_to_caller
+            effect_events = execute_effects(
+                effects, None, entry.name, world, data_dir, private_dir,
+                from_hook=True,
+            )
+            events.extend(effect_events)
+
+    return events

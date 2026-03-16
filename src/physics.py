@@ -13,7 +13,7 @@ from .services import (
     ServiceEntry, MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT,
 )
 from .sandbox import run_service_script
-from .pools import add_to_pool
+from .pools import add_to_pool, get_pool, deduct_from_pool
 
 
 FIXED_TURN_COST = 1.0
@@ -167,6 +167,7 @@ def process_publish_service(
     if installed is None:
         return []
 
+    from .services import VALID_HOOKS
     entry = ServiceEntry(
         name=request.name,
         provider_id=agent.id,
@@ -175,6 +176,8 @@ def process_publish_service(
         price=request.price,
         description=request.description,
         round_published=world.round,
+        subscription_fee=getattr(request, "subscription_fee", 0.0),
+        hooks=[h for h in getattr(request, "hooks", []) if h in VALID_HOOKS],
     )
     entries = load_services(data_dir)
     entries.append(entry)
@@ -288,37 +291,29 @@ def process_use_service(
         return []
 
     agent.energy -= entry.price
+    add_to_pool(entry.name, entry.price, data_dir)
 
+    pool_balance = get_pool(entry.name, data_dir)
     script_path = get_script_path(data_dir, entry)
-    output, success = run_service_script(
+    output_raw, success = run_service_script(
         script_path, agent.id, agent.name, request.input, world.round,
+        pool_balance=pool_balance, price=entry.price,
     )
 
     if not success:
+        deduct_from_pool(entry.name, entry.price, data_dir)
         agent.energy += entry.price
         return [WorldEvent(
             round=world.round,
             type="use_service",
             agent_id=agent.id,
-            details={"service": request.name, "success": False, "error": output[:200]},
+            details={"service": request.name, "success": False, "error": output_raw[:200]},
         )]
 
-    provider.energy += entry.price
+    from .sandbox import parse_service_output
+    display_text, effects = parse_service_output(output_raw)
 
-    results_dir = os.path.join(private_dir, agent.id, "service_results")
-    os.makedirs(results_dir, exist_ok=True)
-    result_file = os.path.join(results_dir, f"{entry.name}.txt")
-    with open(result_file, "w") as f:
-        f.write(output)
-
-    entries = load_services(data_dir)
-    for e in entries:
-        if e.name == entry.name:
-            e.call_count += 1
-            break
-    save_services(entries, data_dir)
-
-    return [WorldEvent(
+    all_events = [WorldEvent(
         round=world.round,
         type="use_service",
         agent_id=agent.id,
@@ -327,6 +322,103 @@ def process_use_service(
             "price": entry.price, "success": True,
         },
     )]
+
+    if effects:
+        all_events.extend(execute_effects(
+            effects, agent, entry.name, world, data_dir, private_dir,
+        ))
+    else:
+        deduct_from_pool(entry.name, entry.price, data_dir)
+        provider.energy += entry.price
+
+    results_dir = os.path.join(private_dir, agent.id, "service_results")
+    os.makedirs(results_dir, exist_ok=True)
+    result_file = os.path.join(results_dir, f"{entry.name}.txt")
+    with open(result_file, "w") as f:
+        f.write(display_text)
+
+    entries = load_services(data_dir)
+    for e in entries:
+        if e.name == entry.name:
+            e.call_count += 1
+            break
+    save_services(entries, data_dir)
+
+    return all_events
+
+
+def execute_effects(
+    effects: list[dict],
+    caller: AgentState,
+    service_name: str,
+    world: WorldState,
+    data_dir: str,
+    private_dir: str,
+    from_hook: bool = False,
+) -> list[WorldEvent]:
+    """Execute effects from a service script, spending from the service pool."""
+    events: list[WorldEvent] = []
+    pool_balance = get_pool(service_name, data_dir)
+    spent = 0.0
+
+    for eff in effects:
+        if not isinstance(eff, dict):
+            continue
+        etype = eff.get("type", "")
+
+        if etype == "transfer_to_caller" and not from_hook:
+            amount = min(float(eff.get("amount", 0)), pool_balance - spent)
+            if amount <= 0:
+                continue
+            caller.energy += amount
+            spent += amount
+            events.append(WorldEvent(
+                round=world.round, type="service_effect", agent_id=caller.id,
+                details={"service": service_name, "effect": "transfer_to_caller", "amount": amount},
+            ))
+
+        elif etype == "transfer_to":
+            target_id = str(eff.get("agent", ""))
+            amount = min(float(eff.get("amount", 0)), pool_balance - spent)
+            if amount <= 0:
+                continue
+            target = next(
+                (a for a in world.agents if a.alive and
+                 (a.id == target_id or a.name.lower() == target_id.lower())),
+                None,
+            )
+            if target is None:
+                continue
+            target.energy += amount
+            spent += amount
+            events.append(WorldEvent(
+                round=world.round, type="service_effect", agent_id=target.id,
+                details={"service": service_name, "effect": "transfer_to", "amount": amount, "from_pool": True},
+            ))
+
+        elif etype == "message":
+            to = str(eff.get("to", ""))
+            msg = str(eff.get("message", ""))[:500]
+            receiver = next(
+                (a for a in world.agents if a.alive and
+                 (a.id == to or a.name.lower() == to.lower())),
+                None,
+            )
+            if receiver is None:
+                continue
+            inbox_path = os.path.join(private_dir, receiver.id, "inbox.md")
+            line = f"[R{world.round}] FROM {service_name} (service): {msg}\n"
+            with open(inbox_path, "a") as f:
+                f.write(line)
+            events.append(WorldEvent(
+                round=world.round, type="service_effect", agent_id=receiver.id,
+                details={"service": service_name, "effect": "message", "to": receiver.id},
+            ))
+
+    if spent > 0:
+        deduct_from_pool(service_name, spent, data_dir)
+
+    return events
 
 
 def process_unpublish_service(

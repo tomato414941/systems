@@ -178,7 +178,17 @@ def _finalize_round(
         for event in peer_events:
             log_event(event)
 
-    from .services import collect_subscription_fees
+    from .services import collect_subscription_fees, run_hooks
+
+    # Lifecycle hooks: on_round_end
+    hook_events = run_hooks(
+        "on_round_end",
+        {"round": world.round, "alive_count": len([a for a in world.agents if a.alive])},
+        world, config.data_dir, config.private_dir,
+    )
+    for event in hook_events:
+        log_event(event)
+
     sub_results = collect_subscription_fees(world, config.data_dir)
     for agent_id, service_name, amount in sub_results:
         if amount > 0:
@@ -189,6 +199,18 @@ def _finalize_round(
     death_events = check_deaths(world)
     for event in death_events:
         log_event(event)
+
+    # Lifecycle hooks: on_agent_death
+    for death_event in death_events:
+        dead = next((a for a in world.agents if a.id == death_event.agent_id), None)
+        if dead:
+            death_hook_events = run_hooks(
+                "on_agent_death",
+                {"dead_agent_id": dead.id, "dead_agent_name": dead.name, "round": world.round},
+                world, config.data_dir, config.private_dir,
+            )
+            for event in death_hook_events:
+                log_event(event)
 
     if death_events:
         svc_events = cleanup_dead_services(world, config.data_dir)

@@ -33,6 +33,8 @@ class PublishServiceRequest:
     script: str
     price: float
     description: str
+    subscription_fee: float = 0.0
+    hooks: list[str] = field(default_factory=list)
 
 
 @dataclass
