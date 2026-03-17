@@ -75,33 +75,35 @@ def _process_agent_result(
     all_events: list[WorldEvent] = []
     cmds = result.commands
 
-    for pub_req in cmds.publish:
-        all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.private_dir))
+    # Skip command execution, energy consumption, and logging in dry-run mode
+    if not config.dry_run:
+        for pub_req in cmds.publish:
+            all_events.extend(process_publish_service(agent, pub_req, world, config.data_dir, config.private_dir))
 
-    for unpub_req in cmds.unpublish:
-        all_events.extend(process_unpublish_service(agent, unpub_req, world, config.data_dir))
+        for unpub_req in cmds.unpublish:
+            all_events.extend(process_unpublish_service(agent, unpub_req, world, config.data_dir))
 
-    for update_req in cmds.update:
-        all_events.extend(process_update_service(agent, update_req, world, config.data_dir))
+        for update_req in cmds.update:
+            all_events.extend(process_update_service(agent, update_req, world, config.data_dir))
 
-    for sub_req in cmds.subscribe:
-        from .services import subscribe, find_service
-        entry = find_service(sub_req.name, config.data_dir)
-        if entry and subscribe(agent.id, sub_req.name, config.data_dir):
-            all_events.append(WorldEvent(round=world.round, type="subscribe", agent_id=agent.id, details={"service": sub_req.name}))
+        for sub_req in cmds.subscribe:
+            from .services import subscribe, find_service
+            entry = find_service(sub_req.name, config.data_dir)
+            if entry and subscribe(agent.id, sub_req.name, config.data_dir):
+                all_events.append(WorldEvent(round=world.round, type="subscribe", agent_id=agent.id, details={"service": sub_req.name}))
 
-    for unsub_req in cmds.unsubscribe:
-        from .services import unsubscribe
-        if unsubscribe(agent.id, unsub_req.name, config.data_dir):
-            all_events.append(WorldEvent(round=world.round, type="unsubscribe", agent_id=agent.id, details={"service": unsub_req.name}))
+        for unsub_req in cmds.unsubscribe:
+            from .services import unsubscribe
+            if unsubscribe(agent.id, unsub_req.name, config.data_dir):
+                all_events.append(WorldEvent(round=world.round, type="unsubscribe", agent_id=agent.id, details={"service": unsub_req.name}))
 
-    for use_req in cmds.use:
-        if agent.energy <= 0:
-            break
-        all_events.extend(process_use_service(agent, use_req, world, config.data_dir, config.private_dir))
+        for use_req in cmds.use:
+            if agent.energy <= 0:
+                break
+            all_events.extend(process_use_service(agent, use_req, world, config.data_dir, config.private_dir))
 
-    consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
-    all_events.extend(consume_events)
+        consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
+        all_events.extend(consume_events)
 
     round_result = RoundResult(
         agent_id=agent.id,
@@ -112,9 +114,10 @@ def _process_agent_result(
         energy_after=agent.energy,
         events=all_events,
     )
-    log_round_result(round_result)
-    for event in all_events:
-        log_event(event)
+    if not config.dry_run:
+        log_round_result(round_result)
+        for event in all_events:
+            log_event(event)
     return round_result
 
 
