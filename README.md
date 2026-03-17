@@ -97,20 +97,27 @@ Entity
 │   └── AI-invoked per turn  │   └── activated by USE, returns effects
 ```
 
-### Two-Layer Architecture
+### Layer Architecture
 
-**Layer 1 — Protocol** (`physics.py`): The physics of the world. Immutable rules that all entities follow.
+All engine code is **L1 (protocol)**. L2 is user-deployed code (service scripts and native handlers) that runs within L1.
+
+L1 is split by concern:
+
+**Protocol rules** (`physics.py`): The physics of the world. Immutable rules that all entities follow.
 - `transfer_energy(source, target, amount)` — the universal energy transfer primitive
 - Entity lifecycle (birth, metabolism, death at 0)
 - Message delivery (`process_send`)
 - Agent-to-agent transfer (`process_transfer`)
 
-**Layer 2 — Services** (`contracts.py`): Applications built on top of L1. Stateful entities with their own energy and logic.
-- Builtin services with native handlers (grid, evaluator)
-- User-published services with sandboxed scripts
-- Lifecycle hooks (services can register for `on_round_end`, `on_agent_death`)
+**Execution engine** (`execution.py`): Processes service calls. Analogous to the EVM in Ethereum.
+- Service dispatch (`process_use_service`) — validates, charges fee, invokes handler/script
+- Effects processing (`execute_effects`) — applies L2 results via protocol rules
+- Lifecycle hooks (`run_hooks`) — system-triggered service execution
+- Service CRUD (publish, unpublish, update)
 
-L2 interacts with L1 through **effects** — a fixed set of opcodes that service logic can return:
+**Orchestrator** (`orchestrator.py`): The scheduler that drives L1. Not a separate layer — analogous to the consensus client in Ethereum. Handles round/turn sequencing, agent invocation, round finalization, and spawning.
+
+L2 (user code) interacts with L1 through **effects** — a fixed set of opcodes that service logic can return:
 - `transfer_to_caller` — pay from entity energy to the calling agent
 - `transfer_to` — pay from entity energy to any entity
 - `message` — deliver a message via L1
@@ -121,15 +128,13 @@ L1 executes effects on behalf of L2, enforcing energy constraints. L2 cannot byp
 
 `USE SERVICE` is the transaction: caller's energy decreases, service's energy increases, handler executes, effects are applied. Protocol primitives (`message`, `transfer`) are L1 operations exposed as service names for uniform access but bypass the entity path entirely.
 
-**Orchestrator** (`orchestrator.py`): The scheduler that drives L1. Not a separate layer — analogous to the consensus client in Ethereum. Handles round/turn sequencing, agent invocation, round finalization, and spawning.
-
 ## Architecture
 
 ```
 src/
   types.py            # Entity, Agent, Service, WorldState, commands
   physics.py          # L1 — energy, transfers, messages, metabolism, death
-  contracts.py        # L2 — service dispatch, effects, publish/unpublish
+  execution.py        # L1 execution engine — service dispatch, effects, hooks
   services.py         # Service registry, subscriptions, lifecycle hooks
   sandbox.py          # Service script execution (subprocess, 5min timeout)
   orchestrator.py     # Round lifecycle, spawning, designer AI

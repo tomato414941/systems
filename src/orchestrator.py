@@ -6,7 +6,7 @@ from .world import get_alive_agents, save_world
 from .physics import (
     consume_energy, check_deaths, random_energy_reward,
 )
-from .contracts import (
+from .execution import (
     process_publish_service, process_use_service, process_unpublish_service,
     process_update_service, cleanup_dead_services,
 )
@@ -180,7 +180,7 @@ def _finalize_round(
             log_event(event)
 
     from .services import collect_subscription_fees
-    from .contracts import run_hooks
+    from .execution import run_hooks
 
     # Lifecycle hooks: on_round_end
     hook_events = run_hooks(

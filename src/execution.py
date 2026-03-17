@@ -1,4 +1,4 @@
-"""Layer 2 — Services: dispatch, effects, service CRUD."""
+"""L1 Execution engine: service dispatch, effects, hooks, service CRUD."""
 
 import json
 import os
