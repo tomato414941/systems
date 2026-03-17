@@ -4,7 +4,7 @@ import json
 import os
 
 from .types import (
-    Agent, PublishServiceRequest, SendRequest, TransferRequest,
+    Agent, PublishServiceRequest,
     UnpublishServiceRequest, UpdateServiceRequest, UseServiceRequest,
     WorldEvent, WorldState,
 )
@@ -16,9 +16,19 @@ from .services import (
 )
 from .sandbox import run_service_script, parse_service_output
 from .events import append_event
-from .physics import process_send, process_transfer, transfer_energy
+from .physics import transfer_energy
 from .grid.service import grid_handler
 from .eval_service import evaluator_handler
+
+
+def _find_agent(world, caller_id, target_name):
+    """Look up an alive agent by name or id, excluding the caller."""
+    target = target_name.lower()
+    return next(
+        (a for a in world.agents if a.alive and a.id != caller_id
+         and (a.name.lower() == target or a.id.lower() == target)),
+        None,
+    )
 
 
 def message_handler(caller_id, caller_name, input_text, round_num, entity, data_dir, world, private_dir):
@@ -26,14 +36,15 @@ def message_handler(caller_id, caller_name, input_text, round_num, entity, data_
         params = json.loads(input_text)
     except (ValueError, TypeError):
         return "Invalid JSON input.", [], None
-    send_req = SendRequest(to=str(params.get("to", "")), message=str(params.get("message", ""))[:500])
-    caller = next((a for a in world.agents if a.id == caller_id), None)
-    if caller is None:
-        return "Caller not found.", [], None
-    events = process_send(caller, send_req, world, private_dir)
-    if events:
-        return f"Message sent to {send_req.to}.", [], None
-    return "Recipient not found.", [], None
+    to = str(params.get("to", ""))
+    message = str(params.get("message", ""))[:500]
+    receiver = _find_agent(world, caller_id, to)
+    if receiver is None:
+        return "Recipient not found.", [], None
+    inbox_path = os.path.join(private_dir, receiver.id, "inbox.md")
+    with open(inbox_path, "a") as f:
+        f.write(f"[R{round_num}] FROM {caller_name}: {message}\n")
+    return f"Message sent to {receiver.name}.", [], None
 
 
 def transfer_handler(caller_id, caller_name, input_text, round_num, entity, data_dir, world, private_dir):
@@ -48,12 +59,13 @@ def transfer_handler(caller_id, caller_name, input_text, round_num, entity, data
     caller = next((a for a in world.agents if a.id == caller_id), None)
     if caller is None:
         return "Caller not found.", [], None
-    transfer_req = TransferRequest(to=to, amount=amount)
-    events = process_transfer(caller, transfer_req, world)
-    if events:
-        actual = events[0].details["amount"]
-        return f"Transferred {actual} to {to}.", [], None
-    return "Transfer failed.", [], None
+    receiver = _find_agent(world, caller_id, to)
+    if receiver is None:
+        return "Recipient not found.", [], None
+    actual = transfer_energy(caller, receiver, amount)
+    if actual <= 0:
+        return "Insufficient energy.", [], None
+    return f"Transferred {actual:.2f} to {receiver.name}.", [], None
 
 
 NATIVE_HANDLERS = {
@@ -261,7 +273,7 @@ def execute_effects(
                 continue
             events.append(WorldEvent(
                 round=world.round, type="service_effect", agent_id=target.id,
-                details={"service": entity.name, "effect": "transfer_to", "amount": actual, "from_pool": True},
+                details={"service": entity.name, "effect": "transfer_to", "amount": actual},
             ))
 
         elif etype == "message":
