@@ -16,12 +16,49 @@ from .services import (
 )
 from .sandbox import run_service_script, parse_service_output
 from .events import append_event
-from .physics import process_send, process_transfer, transfer_energy, SEND_COST
+from .physics import process_send, process_transfer, transfer_energy
 from .grid.service import grid_handler
 from .eval_service import evaluator_handler
 
 
+def message_handler(caller_id, caller_name, input_text, round_num, entity, data_dir, world, private_dir):
+    try:
+        params = json.loads(input_text)
+    except (ValueError, TypeError):
+        return "Invalid JSON input.", [], None
+    send_req = SendRequest(to=str(params.get("to", "")), message=str(params.get("message", ""))[:500])
+    caller = next((a for a in world.agents if a.id == caller_id), None)
+    if caller is None:
+        return "Caller not found.", [], None
+    events = process_send(caller, send_req, world, private_dir)
+    if events:
+        return f"Message sent to {send_req.to}.", [], None
+    return "Recipient not found.", [], None
+
+
+def transfer_handler(caller_id, caller_name, input_text, round_num, entity, data_dir, world, private_dir):
+    try:
+        params = json.loads(input_text)
+    except (ValueError, TypeError):
+        return "Invalid JSON input.", [], None
+    amount = float(params.get("amount", 0))
+    to = str(params.get("to", ""))
+    if amount <= 0 or not to:
+        return "Invalid transfer.", [], None
+    caller = next((a for a in world.agents if a.id == caller_id), None)
+    if caller is None:
+        return "Caller not found.", [], None
+    transfer_req = TransferRequest(to=to, amount=amount)
+    events = process_transfer(caller, transfer_req, world)
+    if events:
+        actual = events[0].details["amount"]
+        return f"Transferred {actual} to {to}.", [], None
+    return "Transfer failed.", [], None
+
+
 NATIVE_HANDLERS = {
+    "message": message_handler,
+    "transfer": transfer_handler,
     "grid": grid_handler,
     "evaluator": evaluator_handler,
 }
@@ -75,32 +112,6 @@ def process_use_service(
     private_dir: str,
 ) -> list[WorldEvent]:
 
-    # Protocol primitives (L1 operations exposed as service names)
-    if request.name == "message":
-        try:
-            params = json.loads(request.input)
-        except (ValueError, TypeError):
-            return []
-        if agent.energy < SEND_COST:
-            return []
-        send_req = SendRequest(to=str(params.get("to", "")), message=str(params.get("message", ""))[:500])
-        events = process_send(agent, send_req, world, private_dir)
-        if events:
-            msg_entity = load_entity(data_dir, "message")
-            if msg_entity:
-                transfer_energy(agent, msg_entity, SEND_COST)
-                save_entity(msg_entity, data_dir)
-        return events
-
-    if request.name == "transfer":
-        try:
-            params = json.loads(request.input)
-        except (ValueError, TypeError):
-            return []
-        transfer_req = TransferRequest(to=str(params.get("to", "")), amount=float(params.get("amount", 0)))
-        return process_transfer(agent, transfer_req, world)
-
-    # Entity path (L2)
     entity = find_service(request.name, data_dir)
     if entity is None:
         return []
@@ -117,6 +128,7 @@ def process_use_service(
 
         output, effects, new_state = handler(
             agent.id, agent.name, request.input, world.round, entity, data_dir,
+            world, private_dir,
         )
     else:
         # User-published script path

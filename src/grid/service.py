@@ -16,7 +16,7 @@ from .prompt import _render_view, _visible_details, VIEW_RADIUS
 BUILTIN_SERVICE_NAME = "grid"
 
 
-def grid_handler(caller_id, caller_name, input_text, round_num, entity, data_dir):
+def grid_handler(caller_id, caller_name, input_text, round_num, entity, data_dir, world=None, private_dir=None):
     """Native handler for grid service. Returns (output, effects, new_state)."""
     output, energy_gained = handle_grid_service(
         caller_id, caller_name, input_text, round_num, data_dir,
