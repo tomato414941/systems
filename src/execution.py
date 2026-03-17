@@ -179,8 +179,6 @@ def process_use_service(
         "input": request.input[:200],
         "success": True,
     }
-    if handler:
-        details["builtin"] = True
 
     all_events = [WorldEvent(
         round=world.round, type="use_service", agent_id=agent.id,

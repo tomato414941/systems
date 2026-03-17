@@ -128,7 +128,7 @@ def get_script_path(data_dir: str, entity: Service) -> str:
 # Builtin services
 # ---------------------------------------------------------------------------
 
-BUILTIN_SERVICES = [
+SYSTEM_SERVICES = [
     Service(
         name="message",
         provider_id="system",
@@ -169,8 +169,8 @@ BUILTIN_SERVICES = [
 ]
 
 
-def ensure_builtin_services(data_dir: str) -> None:
-    for svc in BUILTIN_SERVICES:
+def ensure_system_services(data_dir: str) -> None:
+    for svc in SYSTEM_SERVICES:
         if load_entity(data_dir, svc.name) is None:
             save_entity(svc, data_dir)
 

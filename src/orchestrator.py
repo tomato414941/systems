@@ -124,8 +124,8 @@ def _process_agent_result(
 
 def _ensure_round_started(world: WorldState, config: SimulationConfig):
     """Start a new round if no turns exist. Returns (turns, authorized_prompts)."""
-    from .services import ensure_builtin_services
-    ensure_builtin_services(config.data_dir)
+    from .services import ensure_system_services
+    ensure_system_services(config.data_dir)
     for a in world.agents:
         os.makedirs(os.path.join(config.private_dir, a.id), exist_ok=True)
     if not config.dry_run:
