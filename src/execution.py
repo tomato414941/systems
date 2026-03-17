@@ -176,6 +176,7 @@ def process_use_service(
         "service": request.name,
         "provider": entity.provider_id,
         "price": entity.price,
+        "input": request.input[:200],
         "success": True,
     }
     if handler:
