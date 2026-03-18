@@ -6,7 +6,8 @@ import tempfile
 from .types import (
     Agent, AgentCommands,
     PublishServiceRequest, UseServiceRequest, UnpublishServiceRequest,
-    UpdateServiceRequest, SubscribeRequest, UnsubscribeRequest, WorldState,
+    UpdateServiceRequest, SubscribeRequest, UnsubscribeRequest,
+    DepositRequest, WithdrawRequest, WorldState,
 )
 from .prompt import build_full_prompt, COMMANDS_FILE
 from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
@@ -116,6 +117,7 @@ def _parse_json_commands(raw: str) -> AgentCommands:
                     description=str(entry["description"])[:200],
                     subscription_fee=float(entry.get("subscription_fee", 0.0)),
                     hooks=list(entry.get("hooks", [])),
+                    upgradeable=bool(entry.get("upgradeable", True)),
                 ))
             except (KeyError, ValueError):
                 pass
@@ -155,6 +157,24 @@ def _parse_json_commands(raw: str) -> AgentCommands:
             try:
                 cmds.unsubscribe.append(UnsubscribeRequest(name=str(entry["name"])))
             except KeyError:
+                pass
+
+        elif cmd_type == "deposit":
+            try:
+                cmds.deposit.append(DepositRequest(
+                    name=str(entry["name"]),
+                    amount=float(entry["amount"]),
+                ))
+            except (KeyError, ValueError):
+                pass
+
+        elif cmd_type == "withdraw":
+            try:
+                cmds.withdraw.append(WithdrawRequest(
+                    name=str(entry["name"]),
+                    amount=float(entry["amount"]),
+                ))
+            except (KeyError, ValueError):
                 pass
 
     return cmds

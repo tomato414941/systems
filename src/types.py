@@ -39,6 +39,7 @@ class PublishServiceRequest:
     description: str
     subscription_fee: float = 0.0
     hooks: list[str] = field(default_factory=list)
+    upgradeable: bool = True
 
 
 @dataclass
@@ -70,6 +71,18 @@ class UnsubscribeRequest:
 
 
 @dataclass
+class DepositRequest:
+    name: str
+    amount: float
+
+
+@dataclass
+class WithdrawRequest:
+    name: str
+    amount: float
+
+
+@dataclass
 class AgentCommands:
     publish: list[PublishServiceRequest] = field(default_factory=list)
     use: list[UseServiceRequest] = field(default_factory=list)
@@ -77,6 +90,8 @@ class AgentCommands:
     update: list[UpdateServiceRequest] = field(default_factory=list)
     subscribe: list[SubscribeRequest] = field(default_factory=list)
     unsubscribe: list[UnsubscribeRequest] = field(default_factory=list)
+    deposit: list[DepositRequest] = field(default_factory=list)
+    withdraw: list[WithdrawRequest] = field(default_factory=list)
 
 
 @dataclass
@@ -88,7 +103,7 @@ class WorldState:
 @dataclass
 class WorldEvent:
     round: int
-    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service", "subscribe", "unsubscribe", "subscription_fee", "service_effect"]
+    type: Literal["death", "transfer", "timeout", "invocation_error", "respawn", "designed_spawn", "energy_reward", "human_gift", "send", "publish_service", "use_service", "unpublish_service", "update_service", "subscribe", "unsubscribe", "subscription_fee", "service_effect", "deposit", "withdraw"]
     agent_id: str
     details: dict[str, Any] = field(default_factory=dict)
 

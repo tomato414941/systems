@@ -30,6 +30,8 @@ class Service(Entity):
     subscription_fee: float = 0.0
     hooks: list[str] = field(default_factory=list)
     state: dict = field(default_factory=dict)
+    upgradeable: bool = True
+    protocol: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +52,10 @@ def load_entity(data_dir: str, name: str) -> Service | None:
         return None
     with open(path) as f:
         data = json.load(f)
+    if "upgradeable" not in data:
+        data["upgradeable"] = True
+    if "protocol" not in data:
+        data["protocol"] = data.get("provider_id") == "system"
     known = Service.__dataclass_fields__
     return Service(**{k: v for k, v in data.items() if k in known})
 
@@ -137,6 +143,8 @@ SYSTEM_SERVICES = [
         price=0.1,
         description="Send a message to another agent. Input: {\"to\": \"<name-or-id>\", \"message\": \"<text>\"}. Max 500 chars. Delivered to recipient's inbox.md.",
         round_published=0,
+        upgradeable=False,
+        protocol=True,
     ),
     Service(
         name="transfer",
@@ -146,6 +154,8 @@ SYSTEM_SERVICES = [
         price=0.0,
         description="Transfer energy to another agent. Input: {\"to\": \"<name-or-id>\", \"amount\": <number>}. The amount is deducted from your energy and added to the recipient.",
         round_published=0,
+        upgradeable=False,
+        protocol=True,
     ),
     Service(
         name="grid",
@@ -156,6 +166,8 @@ SYSTEM_SERVICES = [
         description="Spatial grid world with scarce resources. SUBSCRIBE to join, MOVE to explore, GATHER to collect energy. 0.1/action + 0.1/round subscription.",
         round_published=0,
         subscription_fee=0.1,
+        upgradeable=False,
+        protocol=True,
     ),
     Service(
         name="evaluator",
@@ -165,6 +177,8 @@ SYSTEM_SERVICES = [
         price=0.0,
         description="Peer evaluation service. Free, 1 vote per round. RATE <agent> [reason] to vote. STATUS to see current tally. 16E budget distributed proportionally at round end. Cannot vote for yourself.",
         round_published=0,
+        upgradeable=False,
+        protocol=True,
     ),
 ]
 
@@ -251,12 +265,14 @@ def collect_subscription_fees(world: WorldState, data_dir: str) -> list[tuple[st
                 continue
             if agent.energy >= entity.subscription_fee:
                 agent.energy -= entity.subscription_fee
-                if entity.provider_id == "system":
+                if entity.protocol:
                     _pool_fee(data_dir, service_name, entity.subscription_fee)
                 else:
                     provider = next((a for a in world.agents if a.id == entity.provider_id and a.alive), None)
                     if provider:
                         provider.energy += entity.subscription_fee
+                    else:
+                        _pool_fee(data_dir, service_name, entity.subscription_fee)
                 results.append((agent_id, service_name, entity.subscription_fee))
             else:
                 subscribers.remove(agent_id)
@@ -282,13 +298,4 @@ def _on_eviction(data_dir: str, service_name: str, agent_id: str) -> None:
         handler(agent_id, data_dir)
 
 
-def remove_dead_agent_services(world: WorldState, data_dir: str) -> list[str]:
-    alive_ids = {a.id for a in world.agents if a.alive}
-    entities = load_all_entities(data_dir)
-    removed = []
-    for e in entities:
-        if e.provider_id not in alive_ids and e.provider_id != "system":
-            delete_entity(data_dir, e.name)
-            removed.append(e.name)
-    return removed
 

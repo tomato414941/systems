@@ -26,7 +26,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         CommandParam("script", "<filename>"),
         CommandParam("price", "<number>"),
         CommandParam("description", "<text>"),
-    ], limits="min price 0.5, max 2 services"),
+    ], limits='min price 0.5, max 2 services. Optional: "upgradeable": false for immutable.'),
     CommandSpec("update_service", [
         CommandParam("name", "<name>"),
         CommandParam("price", "<number>"),
@@ -34,6 +34,14 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec("unpublish_service", [
         CommandParam("name", "<name>"),
     ]),
+    CommandSpec("deposit", [
+        CommandParam("name", "<service>"),
+        CommandParam("amount", "<number>"),
+    ], limits="owner only"),
+    CommandSpec("withdraw", [
+        CommandParam("name", "<service>"),
+        CommandParam("amount", "<number>"),
+    ], limits="owner only"),
     CommandSpec("subscribe", [
         CommandParam("name", "<service>"),
     ]),

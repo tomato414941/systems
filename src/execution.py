@@ -6,12 +6,13 @@ import os
 from .types import (
     Agent, PublishServiceRequest,
     UnpublishServiceRequest, UpdateServiceRequest, UseServiceRequest,
+    DepositRequest, WithdrawRequest,
     WorldEvent, WorldState,
 )
 from .services import (
     Service, find_service, load_entity, save_entity, delete_entity,
     load_all_entities, count_agent_services,
-    remove_dead_agent_services, install_script, get_script_path,
+    install_script, get_script_path,
     MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT, VALID_HOOKS,
 )
 from .sandbox import run_service_script, parse_service_output
@@ -105,6 +106,7 @@ def process_publish_service(
         round_published=world.round,
         subscription_fee=getattr(request, "subscription_fee", 0.0),
         hooks=[h for h in getattr(request, "hooks", []) if h in VALID_HOOKS],
+        upgradeable=getattr(request, "upgradeable", True),
     )
     save_entity(entity, data_dir)
 
@@ -112,7 +114,7 @@ def process_publish_service(
         round=world.round,
         type="publish_service",
         agent_id=agent.id,
-        details={"service": request.name, "price": request.price, "script": request.script},
+        details={"service": request.name, "price": request.price, "script": request.script, "upgradeable": entity.upgradeable},
     )]
 
 
@@ -169,10 +171,6 @@ def process_use_service(
         if agent.energy < entity.price:
             return []
 
-        provider = next((a for a in world.agents if a.id == entity.provider_id and a.alive), None)
-        if provider is None:
-            return []
-
         transfer_energy(agent, entity, entity.price)
 
         script_path = get_script_path(data_dir, entity)
@@ -191,6 +189,7 @@ def process_use_service(
             )]
 
         output, effects, new_state = parse_service_output(output_raw)
+        provider = next((a for a in world.agents if a.id == entity.provider_id and a.alive), None)
 
     # Common path
     if new_state is not None:
@@ -215,6 +214,7 @@ def process_use_service(
         ))
     elif provider:
         transfer_energy(entity, provider, entity.price)
+    # else: provider dead — energy stays in service pool
 
     entity.call_count += 1
     save_entity(entity, data_dir)
@@ -318,11 +318,7 @@ def execute_effects(
             if not target_name or target_name == entity.name:
                 continue
             target_entity = find_service(target_name, data_dir)
-            if target_entity is None or target_entity.provider_id == "system":
-                continue
-            target_provider = next(
-                (a for a in world.agents if a.id == target_entity.provider_id and a.alive), None)
-            if target_provider is None:
+            if target_entity is None or target_entity.protocol:
                 continue
             call_cost = target_entity.price
             if call_cost > entity.energy:
@@ -395,6 +391,9 @@ def process_update_service(
     if entity is None or entity.provider_id != agent.id:
         return []
 
+    if not entity.upgradeable:
+        return []
+
     old_price = entity.price
     entity.price = request.price
     save_entity(entity, data_dir)
@@ -407,12 +406,46 @@ def process_update_service(
     )]
 
 
-def cleanup_dead_services(world: WorldState, data_dir: str) -> list[WorldEvent]:
-    removed = remove_dead_agent_services(world, data_dir)
-    return [
-        WorldEvent(round=world.round, type="unpublish_service", agent_id="system", details={"service": name, "reason": "provider_dead"})
-        for name in removed
-    ]
+def process_deposit(
+    agent: Agent,
+    request: DepositRequest,
+    world: WorldState,
+    data_dir: str,
+) -> list[WorldEvent]:
+    entity = find_service(request.name, data_dir)
+    if entity is None or entity.provider_id != agent.id:
+        return []
+    actual = transfer_energy(agent, entity, request.amount)
+    if actual <= 0:
+        return []
+    save_entity(entity, data_dir)
+    return [WorldEvent(
+        round=world.round,
+        type="deposit",
+        agent_id=agent.id,
+        details={"service": request.name, "amount": actual},
+    )]
+
+
+def process_withdraw(
+    agent: Agent,
+    request: WithdrawRequest,
+    world: WorldState,
+    data_dir: str,
+) -> list[WorldEvent]:
+    entity = find_service(request.name, data_dir)
+    if entity is None or entity.provider_id != agent.id:
+        return []
+    actual = transfer_energy(entity, agent, request.amount)
+    if actual <= 0:
+        return []
+    save_entity(entity, data_dir)
+    return [WorldEvent(
+        round=world.round,
+        type="withdraw",
+        agent_id=agent.id,
+        details={"service": request.name, "amount": actual},
+    )]
 
 
 def run_hooks(
@@ -431,7 +464,7 @@ def run_hooks(
     for entity in entities:
         if hook_name not in entity.hooks:
             continue
-        if entity.provider_id == "system":
+        if entity.protocol:
             continue
 
         script_path = get_script_path(data_dir, entity)

@@ -8,7 +8,7 @@ from .physics import (
 )
 from .execution import (
     process_publish_service, process_use_service, process_unpublish_service,
-    process_update_service, cleanup_dead_services,
+    process_update_service, process_deposit, process_withdraw,
 )
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
@@ -62,6 +62,10 @@ def _invoke_worker(
             actions.append(f"{len(result.commands.unpublish)} UNPUBLISH")
         if result.commands.update:
             actions.append(f"{len(result.commands.update)} UPDATE")
+        if result.commands.deposit:
+            actions.append(f"{len(result.commands.deposit)} DEPOSIT")
+        if result.commands.withdraw:
+            actions.append(f"{len(result.commands.withdraw)} WITHDRAW")
         action = ", ".join(actions) if actions else "no actions"
         cost_str = f", ${result.cost_usd:.3f}" if result.cost_usd > 0 else ""
         print(f"  [{agent.name}] done ({action}{cost_str})", flush=True)
@@ -101,6 +105,12 @@ def _process_agent_result(
             if agent.energy <= 0:
                 break
             all_events.extend(process_use_service(agent, use_req, world, config.data_dir, config.private_dir))
+
+        for dep_req in cmds.deposit:
+            all_events.extend(process_deposit(agent, dep_req, world, config.data_dir))
+
+        for wdr_req in cmds.withdraw:
+            all_events.extend(process_withdraw(agent, wdr_req, world, config.data_dir))
 
         consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
         all_events.extend(consume_events)
@@ -217,10 +227,7 @@ def _finalize_round(
             for event in death_hook_events:
                 log_event(event)
 
-    if death_events:
-        svc_events = cleanup_dead_services(world, config.data_dir)
-        for event in svc_events:
-            log_event(event)
+    # Services survive owner death — no cleanup needed
 
     if not config.dry_run:
         respawn_events = spontaneous_spawn(world, config, authorized_prompts)
