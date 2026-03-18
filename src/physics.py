@@ -21,10 +21,8 @@ def transfer_energy(source: Entity, target: Entity, amount: float) -> float:
     return actual
 
 
-def consume_energy(agent: Agent, round_num: int, cost_usd: float = 0.0, base_metabolism: float = 0.0) -> list[WorldEvent]:
-    activity_cost = FIXED_TURN_COST
-    total_cost = activity_cost
-    agent.energy -= total_cost
+def consume_energy(agent: Agent, round_num: int) -> list[WorldEvent]:
+    agent.energy -= FIXED_TURN_COST
     agent.age += 1
     events: list[WorldEvent] = []
 
@@ -34,7 +32,7 @@ def consume_energy(agent: Agent, round_num: int, cost_usd: float = 0.0, base_met
             round=round_num,
             type="death",
             agent_id=agent.id,
-            details={"reason": "energy_depleted", "base_metabolism": base_metabolism, "activity_cost": activity_cost},
+            details={"reason": "energy_depleted"},
         ))
 
     return events

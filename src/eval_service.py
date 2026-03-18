@@ -9,7 +9,7 @@ VOTES_FILE = "votes.json"
 EVAL_BUDGET = 16.0
 
 
-def evaluator_handler(caller_id, caller_name, input_text, round_num, entity, data_dir, world=None, private_dir=None):
+def evaluator_handler(caller_id, caller_name, input_text, round_num, entity, data_dir, world, private_dir):
     """Native handler for evaluator service. Returns (output, effects, new_state)."""
     output, _energy = handle_evaluator_service(
         caller_id, caller_name, input_text, round_num, data_dir,

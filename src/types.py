@@ -20,18 +20,6 @@ class Agent(Entity):
 
 
 @dataclass
-class TransferRequest:
-    to: str
-    amount: float
-
-
-@dataclass
-class SendRequest:
-    to: str
-    message: str
-
-
-@dataclass
 class PublishServiceRequest:
     name: str
     script: str

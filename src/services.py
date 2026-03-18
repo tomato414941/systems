@@ -7,6 +7,7 @@ import stat
 from dataclasses import asdict, dataclass, field
 
 from .types import Entity, WorldState
+from .physics import transfer_energy
 from .grid.service import on_eviction as _grid_eviction
 
 _EVICTION_HANDLERS = {"grid": _grid_eviction}
@@ -15,7 +16,6 @@ SERVICES_DIR = "services"
 MAX_SERVICES_PER_AGENT = 2
 MIN_SERVICE_PRICE = 0.5
 SUBSCRIPTIONS_FILE = "subscriptions.json"
-VALID_HOOKS = {"on_round_end", "on_agent_death", "on_transfer"}
 
 
 @dataclass(kw_only=True)
@@ -52,10 +52,6 @@ def load_entity(data_dir: str, name: str) -> Service | None:
         return None
     with open(path) as f:
         data = json.load(f)
-    if "upgradeable" not in data:
-        data["upgradeable"] = True
-    if "protocol" not in data:
-        data["protocol"] = data.get("provider_id") == "system"
     known = Service.__dataclass_fields__
     return Service(**{k: v for k, v in data.items() if k in known})
 
@@ -131,7 +127,7 @@ def get_script_path(data_dir: str, entity: Service) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Builtin services
+# System services
 # ---------------------------------------------------------------------------
 
 SYSTEM_SERVICES = [
@@ -264,15 +260,16 @@ def collect_subscription_fees(world: WorldState, data_dir: str) -> list[tuple[st
                 changed = True
                 continue
             if agent.energy >= entity.subscription_fee:
-                agent.energy -= entity.subscription_fee
                 if entity.protocol:
-                    _pool_fee(data_dir, service_name, entity.subscription_fee)
+                    transfer_energy(agent, entity, entity.subscription_fee)
+                    save_entity(entity, data_dir)
                 else:
                     provider = next((a for a in world.agents if a.id == entity.provider_id and a.alive), None)
                     if provider:
-                        provider.energy += entity.subscription_fee
+                        transfer_energy(agent, provider, entity.subscription_fee)
                     else:
-                        _pool_fee(data_dir, service_name, entity.subscription_fee)
+                        transfer_energy(agent, entity, entity.subscription_fee)
+                        save_entity(entity, data_dir)
                 results.append((agent_id, service_name, entity.subscription_fee))
             else:
                 subscribers.remove(agent_id)
@@ -283,13 +280,6 @@ def collect_subscription_fees(world: WorldState, data_dir: str) -> list[tuple[st
     if changed or results:
         save_subscriptions(subs, data_dir)
     return results
-
-
-def _pool_fee(data_dir: str, service_name: str, amount: float) -> None:
-    entity = load_entity(data_dir, service_name)
-    if entity:
-        entity.energy += amount
-        save_entity(entity, data_dir)
 
 
 def _on_eviction(data_dir: str, service_name: str, agent_id: str) -> None:

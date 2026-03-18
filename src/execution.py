@@ -13,8 +13,10 @@ from .services import (
     Service, find_service, load_entity, save_entity, delete_entity,
     load_all_entities, count_agent_services,
     install_script, get_script_path,
-    MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT, VALID_HOOKS,
+    MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT,
 )
+
+VALID_HOOKS = {"on_round_end", "on_agent_death", "on_transfer"}
 from .sandbox import run_service_script, parse_service_output
 from .events import append_event
 from .physics import transfer_energy

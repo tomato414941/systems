@@ -1,5 +1,4 @@
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .types import Agent, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
@@ -112,7 +111,7 @@ def _process_agent_result(
         for wdr_req in cmds.withdraw:
             all_events.extend(process_withdraw(agent, wdr_req, world, config.data_dir))
 
-        consume_events = consume_energy(agent, world.round, result.cost_usd, config.base_metabolism)
+        consume_events = consume_energy(agent, world.round)
         all_events.extend(consume_events)
 
     round_result = RoundResult(
@@ -311,10 +310,6 @@ def run_turn(world: WorldState, config: SimulationConfig) -> None:
         for f in findings:
             print(f"    - [{f['rule']}]: {f['detail'][:120]}")
 
-    # Check for agent-to-human message
-
-    if not turns.pending:
-        print(f"  All agents done. Run --turn again to finalize round.")
 
 
 def run_round(
@@ -335,26 +330,13 @@ def run_round(
 
     deploy_self_prompts(authorized_prompts, config.private_dir)
 
-    # Invoke sequentially — concurrent execution allows agents to tamper
-    # with each other's private directories via path traversal.
-    invoke_results: dict[str, tuple[Agent, InvokeResult, float]] = {}
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        futures = {
-            pool.submit(
-                _invoke_worker, agent, world, config.public_dir,
-                config.private_dir, config.round_timeout, config.dry_run,
-                config.logs_dir,
-            ): agent
-            for agent in pending
-        }
-        for future in as_completed(futures):
-            agent, result = future.result()
-            invoke_results[agent.id] = (agent, result, agent.energy)
-
-    # Process results in turn order
     results: list[RoundResult] = []
     for agent in pending:
-        agent, result, energy_before = invoke_results[agent.id]
+        energy_before = agent.energy
+        _, result = _invoke_worker(
+            agent, world, config.public_dir, config.private_dir,
+            config.round_timeout, config.dry_run, config.logs_dir,
+        )
         round_result = _process_agent_result(agent, result, energy_before, world, config)
         results.append(round_result)
         turns.completed.append(agent.id)
