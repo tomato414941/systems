@@ -64,6 +64,11 @@ def random_invoker_model() -> tuple[str, str]:
 
 TOP_MODELS = [("claude", "claude-opus-4-6"), ("codex", "gpt-5.4")]
 
+
+def clean_env() -> dict[str, str]:
+    import os
+    return {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+
 DEFAULT_CONFIG = SimulationConfig()
 
 

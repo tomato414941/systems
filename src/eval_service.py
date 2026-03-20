@@ -71,6 +71,7 @@ def distribute_eval_rewards(world, data_dir: str) -> list:
     """Called at round end. Distributes from evaluator entity energy proportionally to votes."""
     from .types import WorldEvent
     from .services import load_entity, save_entity
+    from .physics import transfer_energy
 
     entity = load_entity(data_dir, SERVICE_NAME)
     budget = entity.energy if entity else 0.0
@@ -82,7 +83,6 @@ def distribute_eval_rewards(world, data_dir: str) -> list:
     if not round_votes or budget <= 0:
         return []
 
-    # Tally votes by target (resolve name to agent)
     tally = {}
     for vote_data in round_votes.values():
         target = vote_data["target"].lower()
@@ -99,29 +99,23 @@ def distribute_eval_rewards(world, data_dir: str) -> list:
 
     total_votes = sum(tally.values())
     events = []
-    total_distributed = 0.0
 
     for agent_id, count in sorted(tally.items(), key=lambda x: -x[1]):
         amount = round(budget * count / total_votes, 2)
-        if total_distributed + amount > budget:
-            amount = round(budget - total_distributed, 2)
-        if amount <= 0:
-            continue
-
         agent = next(a for a in world.agents if a.id == agent_id)
-        agent.energy += amount
-        total_distributed += amount
+        actual = transfer_energy(entity, agent, amount)
+        if actual <= 0:
+            continue
 
         events.append(WorldEvent(
             round=world.round,
             type="energy_reward",
             agent_id=agent_id,
-            details={"amount": amount, "source": "peer_eval", "votes": count},
+            details={"amount": actual, "source": "peer_eval", "votes": count},
         ))
-        print(f"  [peer-eval] {agent.name}: +{amount:.1f} ({count} vote(s))")
+        print(f"  [peer-eval] {agent.name}: +{actual:.1f} ({count} vote(s))")
 
-    if entity and total_distributed > 0:
-        entity.energy -= total_distributed
+    if entity:
         save_entity(entity, data_dir)
 
     if not events:

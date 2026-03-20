@@ -4,7 +4,7 @@ import json
 import os
 
 from .types import (
-    Agent, PublishServiceRequest,
+    Agent, PublishServiceRequest, SubscribeRequest, UnsubscribeRequest,
     UnpublishServiceRequest, UpdateServiceRequest, UseServiceRequest,
     DepositRequest, WithdrawRequest,
     WorldEvent, WorldState,
@@ -13,11 +13,12 @@ from .services import (
     Service, find_service, load_entity, save_entity, delete_entity,
     load_all_entities, count_agent_services,
     install_script, get_script_path,
+    subscribe, unsubscribe,
     MIN_SERVICE_PRICE, MAX_SERVICES_PER_AGENT,
 )
+from .sandbox import run_service_script, parse_service_output
 
 VALID_HOOKS = {"on_round_end", "on_agent_death", "on_transfer"}
-from .sandbox import run_service_script, parse_service_output
 from .events import append_event
 from .physics import transfer_energy
 from .grid.service import grid_handler
@@ -448,6 +449,31 @@ def process_withdraw(
         agent_id=agent.id,
         details={"service": request.name, "amount": actual},
     )]
+
+
+def process_subscribe(
+    agent: Agent,
+    request: SubscribeRequest,
+    world: WorldState,
+    data_dir: str,
+) -> list[WorldEvent]:
+    entity = find_service(request.name, data_dir)
+    if entity is None:
+        return []
+    if subscribe(agent.id, request.name, data_dir):
+        return [WorldEvent(round=world.round, type="subscribe", agent_id=agent.id, details={"service": request.name})]
+    return []
+
+
+def process_unsubscribe(
+    agent: Agent,
+    request: UnsubscribeRequest,
+    world: WorldState,
+    data_dir: str,
+) -> list[WorldEvent]:
+    if unsubscribe(agent.id, request.name, data_dir):
+        return [WorldEvent(round=world.round, type="unsubscribe", agent_id=agent.id, details={"service": request.name})]
+    return []
 
 
 def run_hooks(

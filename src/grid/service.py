@@ -54,7 +54,7 @@ def handle_grid_service(
 
     _sync_round(world, round_num)
 
-    agent = _find_agent(world, caller_id, caller_name)
+    agent = _find_grid_agent(world, caller_id, caller_name)
 
     if action == "JOIN":
         if agent:
@@ -129,7 +129,7 @@ def _view(agent: GridAgent, world: GridWorld) -> str:
     return f"=== VIEW (radius {VIEW_RADIUS}) ===\n{view}\n\nLegend: @ = you, A = agent, R = resource, . = empty, # = wall\n\n{details}"
 
 
-def _find_agent(world: GridWorld, caller_id: str, caller_name: str) -> GridAgent | None:
+def _find_grid_agent(world: GridWorld, caller_id: str, caller_name: str) -> GridAgent | None:
     for a in world.agents:
         if a.id == caller_id or a.name == caller_name:
             return a

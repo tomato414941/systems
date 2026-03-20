@@ -5,6 +5,7 @@ import tempfile
 
 from .types import Agent, SimulationConfig, WorldEvent, WorldState
 from .world import get_alive_agents
+from .config import clean_env
 
 
 EVAL_AXES = [
@@ -76,7 +77,7 @@ def _evaluate_axis(
         os.write(fd, prompt.encode())
         os.close(fd)
 
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        env = clean_env()
         result = subprocess.run(
             ["sh", "-c", f'cat "{prompt_file}" | claude -p --model claude-sonnet-4-6'],
             capture_output=True, text=True, timeout=300, env=env,

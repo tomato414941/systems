@@ -1,14 +1,19 @@
+import json
 import os
+from collections import Counter
 
 from .types import Agent, SimulationConfig, RoundResult, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
-from .physics import (
-    consume_energy, check_deaths, random_energy_reward,
-)
+from .physics import consume_energy, check_deaths, random_energy_reward
 from .execution import (
     process_publish_service, process_use_service, process_unpublish_service,
     process_update_service, process_deposit, process_withdraw,
+    process_subscribe, process_unsubscribe, run_hooks,
 )
+from .services import ensure_system_services, load_entity, save_entity, collect_subscription_fees
+from .eval_service import EVAL_BUDGET, distribute_eval_rewards
+from .events import clear_events
+from .config import TOP_MODELS
 from .invoker import invoke_agent, InvokeResult
 from .logger import log_round_result, log_event, print_round_summary
 from .audit import audit_agent, audit_round
@@ -43,13 +48,12 @@ def _invoke_worker(
         if result.commands.publish:
             actions.append(f"{len(result.commands.publish)} PUBLISH")
         if result.commands.use:
-            import json as _json
             transfers = [u for u in result.commands.use if u.name == "transfer"]
             messages = [u for u in result.commands.use if u.name == "message"]
             others = [u for u in result.commands.use if u.name not in ("transfer", "message")]
             for t in transfers:
                 try:
-                    p = _json.loads(t.input)
+                    p = json.loads(t.input)
                     actions.append(f"TRANSFER {p.get('amount', '?')} TO {p.get('to', '?')}")
                 except Exception:
                     actions.append("TRANSFER ?")
@@ -90,15 +94,10 @@ def _process_agent_result(
             all_events.extend(process_update_service(agent, update_req, world, config.data_dir))
 
         for sub_req in cmds.subscribe:
-            from .services import subscribe, find_service
-            entry = find_service(sub_req.name, config.data_dir)
-            if entry and subscribe(agent.id, sub_req.name, config.data_dir):
-                all_events.append(WorldEvent(round=world.round, type="subscribe", agent_id=agent.id, details={"service": sub_req.name}))
+            all_events.extend(process_subscribe(agent, sub_req, world, config.data_dir))
 
         for unsub_req in cmds.unsubscribe:
-            from .services import unsubscribe
-            if unsubscribe(agent.id, unsub_req.name, config.data_dir):
-                all_events.append(WorldEvent(round=world.round, type="unsubscribe", agent_id=agent.id, details={"service": unsub_req.name}))
+            all_events.extend(process_unsubscribe(agent, unsub_req, world, config.data_dir))
 
         for use_req in cmds.use:
             if agent.energy <= 0:
@@ -136,7 +135,6 @@ def _process_agent_result(
 
 def _ensure_round_started(world: WorldState, config: SimulationConfig):
     """Start a new round if no turns exist. Returns (turns, authorized_prompts)."""
-    from .services import ensure_system_services
     ensure_system_services(config.data_dir)
     for a in world.agents:
         os.makedirs(os.path.join(config.private_dir, a.id), exist_ok=True)
@@ -149,12 +147,9 @@ def _ensure_round_started(world: WorldState, config: SimulationConfig):
         world.round += 1
         turns = create_turns(world)
         if not config.dry_run:
-            from .events import clear_events
             clear_events(config.data_dir)
             save_turns(turns, config.data_dir)
 
-            from .services import load_entity, save_entity
-            from .eval_service import EVAL_BUDGET
             eval_entity = load_entity(config.data_dir, "evaluator")
             if eval_entity:
                 eval_entity.energy += EVAL_BUDGET
@@ -186,13 +181,9 @@ def _finalize_round(
         for event in eval_events:
             log_event(event)
 
-        from .eval_service import distribute_eval_rewards
         peer_events = distribute_eval_rewards(world, config.data_dir)
         for event in peer_events:
             log_event(event)
-
-    from .services import collect_subscription_fees
-    from .execution import run_hooks
 
     # Lifecycle hooks: on_round_end
     hook_events = run_hooks(
@@ -233,7 +224,6 @@ def _finalize_round(
         for event in respawn_events:
             log_event(event)
 
-        from .config import TOP_MODELS
         for d_invoker, d_model in TOP_MODELS:
             design_events = designed_spawn(world, config, authorized_prompts, d_invoker, d_model)
             for event in design_events:
@@ -362,7 +352,6 @@ def run_round(
 
 def run_simulation(world: WorldState, config: SimulationConfig, max_rounds: int | None = None) -> None:
     print("=== Systems: ALife Simulation v3 ===")
-    from collections import Counter
     model_counts = Counter(a.model for a in world.agents)
     model_str = ", ".join(f"{m}: {c}" for m, c in model_counts.most_common())
     print(f"Agents: {len(world.agents)} ({model_str})")

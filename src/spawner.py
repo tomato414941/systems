@@ -7,7 +7,7 @@ import tempfile
 
 from .types import Agent, SimulationConfig, WorldEvent, WorldState
 from .world import get_alive_agents, save_world
-from .config import get_agent_name, TOP_MODELS
+from .config import get_agent_name, TOP_MODELS, clean_env
 from .prompt import SELF_PROMPT_FILE
 from .logger import log_event
 
@@ -177,7 +177,7 @@ def _design_self_prompt(
         os.write(fd, designer_prompt.encode())
         os.close(fd)
 
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        env = clean_env()
         if designer_invoker == "claude":
             result = subprocess.run(
                 ["sh", "-c", f'cat "{prompt_file}" | claude -p --model {designer_model}'],

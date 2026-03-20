@@ -10,7 +10,7 @@ from .types import (
     DepositRequest, WithdrawRequest, WorldState,
 )
 from .prompt import build_full_prompt, COMMANDS_FILE
-from .config import default_model, MODEL_PRICING, DEFAULT_PRICING
+from .config import default_model, MODEL_PRICING, DEFAULT_PRICING, clean_env
 
 
 class InvokeResult:
@@ -190,7 +190,7 @@ def _invoke_claude(prompt: str, agent: Agent, model: str, timeout: int, logs_dir
         os.write(fd, prompt.encode())
         os.close(fd)
 
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        env = clean_env()
         result = subprocess.run(
             ["sh", "-c", f'cat "{prompt_file}" | claude -p --verbose --output-format stream-json --model {model} --dangerously-skip-permissions'],
             capture_output=True,
@@ -235,7 +235,7 @@ def _invoke_codex(prompt: str, agent: Agent, model: str, timeout: int, logs_dir:
         os.write(fd, prompt.encode())
         os.close(fd)
 
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        env = clean_env()
         result = subprocess.run(
             ["sh", "-c", f'cat "{prompt_file}" | codex exec --json -m {model} -o "{output_file}" --sandbox danger-full-access'],
             capture_output=True,
